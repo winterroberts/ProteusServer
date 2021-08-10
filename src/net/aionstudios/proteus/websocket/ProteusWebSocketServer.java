@@ -1,5 +1,6 @@
 package net.aionstudios.proteus.websocket;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.util.HashMap;
 import java.util.Map;
@@ -13,9 +14,17 @@ public class ProteusWebSocketServer extends WebSocketServer {
 	
 	private Map<WebSocket, ProteusWebSocketContext> active;
 	
+	private boolean loopback = false;
+	
 	public ProteusWebSocketServer(int port) {
 		super(new InetSocketAddress(port));
 		active = new HashMap<>();
+	}
+	
+	public ProteusWebSocketServer(int port, boolean loopback) {
+		super(loopback ? new InetSocketAddress(InetAddress.getLoopbackAddress(), port) : new InetSocketAddress(port));
+		active = new HashMap<>();
+		this.loopback = loopback;
 	}
 
 	@Override

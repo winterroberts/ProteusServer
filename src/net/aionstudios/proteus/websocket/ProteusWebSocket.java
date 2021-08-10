@@ -3,8 +3,10 @@ package net.aionstudios.proteus.websocket;
 import java.io.IOException;
 
 import org.java_websocket.server.DefaultSSLWebSocketServerFactory;
+import org.java_websocket.server.WebSocketServer;
 
 import net.aionstudios.proteus.configuration.WebSocketConfiguration;
+import net.aionstudios.proteus.configuration.WebSocketLoopbackConfiguration;
 
 public class ProteusWebSocket {
 	
@@ -19,6 +21,11 @@ public class ProteusWebSocket {
 	
 	public void start() {
 		if (!running) {
+			if (configuration instanceof WebSocketLoopbackConfiguration) {
+				webSocketServer = new ProteusWebSocketServer(configuration.getPort(), true);
+			} else {
+				webSocketServer = new ProteusWebSocketServer(configuration.getPort());
+			}
 			if (configuration.getSslContext() != null) webSocketServer.setWebSocketFactory(new DefaultSSLWebSocketServerFactory(configuration.getSslContext()));
 			webSocketServer.start();
 			System.out.println((configuration.isSecure() ? "Secure " : "") + "Web Socket server started on port " + configuration.getPort());
@@ -38,6 +45,10 @@ public class ProteusWebSocket {
 			}
 			running = false;
 		}
+	}
+	
+	public WebSocketConfiguration getConfiguration() {
+		return configuration;
 	}
 
 }

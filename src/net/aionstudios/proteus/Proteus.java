@@ -42,7 +42,7 @@ public class Proteus {
 						r.setMimeString("text/html");
 						r.sendResponse("<html>"
 								+ "<body>"
-								+ "<h1>Dominique</h1>"
+								+ "<h1>Dayton</h1>"
 								+ "</body>"
 								+ "</html>");
 					}
