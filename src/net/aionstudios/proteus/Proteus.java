@@ -1,23 +1,30 @@
 package net.aionstudios.proteus;
 
+import java.io.IOException;
+
 import net.aionstudios.aionlog.AnsiOut;
 import net.aionstudios.aionlog.Logger;
 import net.aionstudios.aionlog.StandardOverride;
 import net.aionstudios.aionlog.SubConsolePrefix;
+import net.aionstudios.proteus.api.ProteusAPI;
 import net.aionstudios.proteus.api.ProteusImplementer;
 import net.aionstudios.proteus.api.context.ProteusContext;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
 import net.aionstudios.proteus.configuration.EndpointConfiguration;
-import net.aionstudios.proteus.configuration.HttpConfiguration;
+import net.aionstudios.proteus.configuration.EndpointType;
+import net.aionstudios.proteus.fileio.MimeType;
+import net.aionstudios.proteus.request.MultipartFileStream;
 import net.aionstudios.proteus.request.ProteusHttpRequest;
-import net.aionstudios.proteus.request.ProteusHttpResponse;
+import net.aionstudios.proteus.response.ProteusHttpResponse;
+import net.aionstudios.proteus.response.ResponseCode;
 import net.aionstudios.proteus.server.ProteusServer;
 import net.aionstudios.proteus.server.api.ImplementerManager;
 
 public class Proteus {
 	
 	public static void main(String[] args) {
-		System.setProperty("java.net.preferIPv4Stack" , "true");
+		// Pythia Console, Horae Cron
+		ProteusAPI.enableBrotli();
 		Logger.setup();
 		AnsiOut.initialize();
 		AnsiOut.setStreamPrefix("Proteus");
@@ -34,20 +41,23 @@ public class Proteus {
 
 			@Override
 			public EndpointConfiguration[] onEnable() {
-				return new EndpointConfiguration[] { new HttpConfiguration(80, false, new ProteusHttpContext() {
+				EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
+				ec.getContextController().setHttpDefault(new ProteusHttpContext() {
 
 					@Override
-					public void handle(ProteusHttpRequest request) {
-						ProteusHttpResponse r = ProteusHttpResponse.getResponserForRequest(request);
-						r.setMimeString("text/html");
-						r.sendResponse("<html>"
-								+ "<body>"
-								+ "<h1>Dayton</h1>"
-								+ "</body>"
-								+ "</html>");
+					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
+						MultipartFileStream file = request.getRequestBody().getFiles().getParameter("d");
+						try {
+							byte[] bytes = file.readNBytes(file.getSize());
+							response.setMimeString(MimeType.getInstance().getMimeString("jpg"));
+							response.sendResponse(ResponseCode.OK, bytes);
+						} catch (IOException e) {
+							e.printStackTrace();
+						}
 					}
 					
-				}, new @ProteusContext(path={"/p", "/g"}, preserveType=true) H() {} )};
+				});
+				return new EndpointConfiguration[] { ec };
 			}
 
 			@Override
@@ -57,7 +67,7 @@ public class Proteus {
 			}
 			
 		};
-		ProteusServer server = new ProteusServer(pi, pi.onEnable());
+		ProteusServer server = new ProteusServer(pi, pi.onEnable()[0]);
 		server.start();
 	}
 
