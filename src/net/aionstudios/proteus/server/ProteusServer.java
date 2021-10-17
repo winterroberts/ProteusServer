@@ -86,6 +86,9 @@ public class ProteusServer {
 		
 		StringBuilder requestBuilder = new StringBuilder();
         String line;
+        while (inputStream.available() == 0) {
+        	
+        }
         while (!(line = StreamUtils.readLine(inputStream, true)).isBlank()) {
         	requestBuilder.append(line + "\r\n");
         }
@@ -113,7 +116,7 @@ public class ProteusServer {
         ProteusHttpHeaders headers = headerBuilder.toHeaders();
         
         CompressionEncoding ce = headers.hasHeader("Accept-Encoding") ? 
-				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue(), ProteusAPI.hasBrotli()) : 
+				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
 					CompressionEncoding.NONE;
         
         if (version.equals("HTTP/1.1")) {

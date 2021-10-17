@@ -46,14 +46,7 @@ public class Proteus {
 
 					@Override
 					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
-						MultipartFileStream file = request.getRequestBody().getFiles().getParameter("d");
-						try {
-							byte[] bytes = file.readNBytes(file.getSize());
-							response.setMimeString(MimeType.getInstance().getMimeString("jpg"));
-							response.sendResponse(ResponseCode.OK, bytes);
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
+						response.sendResponse("<html><body><h1>Dayton</h1></body></html>");
 					}
 					
 				});
