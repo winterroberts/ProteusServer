@@ -1,25 +1,26 @@
 package net.aionstudios.proteus.server;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import net.aionstudios.proteus.api.ProteusAPI;
 import net.aionstudios.proteus.api.ProteusImplementer;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
+import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
 import net.aionstudios.proteus.api.util.StreamUtils;
 import net.aionstudios.proteus.compression.CompressionEncoding;
 import net.aionstudios.proteus.configuration.EndpointConfiguration;
 import net.aionstudios.proteus.error.ErrorResponse;
+import net.aionstudios.proteus.header.HeaderValue;
 import net.aionstudios.proteus.header.ProteusHeaderBuilder;
 import net.aionstudios.proteus.header.ProteusHttpHeaders;
 import net.aionstudios.proteus.request.ProteusHttpRequest;
+import net.aionstudios.proteus.request.ProteusWebSocketConnection;
+import net.aionstudios.proteus.request.ProteusWebSocketConnectionManager;
 import net.aionstudios.proteus.response.ProteusHttpResponse;
 import net.aionstudios.proteus.response.ResponseCode;
 
@@ -69,6 +70,7 @@ public class ProteusServer {
 							
 							});
 						}
+						ProteusWebSocketConnectionManager.getConnectionManager().closeAll();
 						stopped = true;
 					} catch (IOException e) {
 						e.printStackTrace();
@@ -115,21 +117,24 @@ public class ProteusServer {
         }
         ProteusHttpHeaders headers = headerBuilder.toHeaders();
         
-        CompressionEncoding ce = headers.hasHeader("Accept-Encoding") ? 
-				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
-					CompressionEncoding.NONE;
-        
         if (version.equals("HTTP/1.1")) {
-        	ProteusHttpRequest request = new ProteusHttpRequest(client, method, version, path, host, headers);
-        	switch(method) {
-        	case "GET":
-        		respondWithContext(request, client.getOutputStream(), ce);
-        		break;
-        	case "POST":
-        		respondWithContext(request, client.getOutputStream(), ce);
-        		break;
-        	default:
-        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.METHOD_NOT_ALLOWED, client);
+        	if (method.equals("GET") && headers.hasHeader("Sec-WebSocket-Key")) {
+        		startWebSocketConnection(client, path, host, headers);
+        	} else {
+	        	CompressionEncoding ce = headers.hasHeader("Accept-Encoding") ? 
+	    				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
+	    					CompressionEncoding.NONE;
+	        	ProteusHttpRequest request = new ProteusHttpRequest(client, method, version, path, host, headers);
+	        	switch(method) {
+	        	case "GET":
+	        		respondWithContext(request, client.getOutputStream(), ce);
+	        		break;
+	        	case "POST":
+	        		respondWithContext(request, client.getOutputStream(), ce);
+	        		break;
+	        	default:
+	        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.METHOD_NOT_ALLOWED, client);
+	        	}
         	}
         } else {
         	ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.HTTP_VERSION_NOT_SUPPORTED, client);
@@ -148,6 +153,23 @@ public class ProteusServer {
 			ProteusHttpResponse response = new ProteusHttpResponse(outputStream, encoding);
 			context.handle(request, response);
 			// TODO this returns a gz download and it shouldnt
+		}
+	}
+	
+	private void startWebSocketConnection(Socket client, String path, String host, ProteusHttpHeaders headers) {
+		ProteusWebSocketContext context = configuration.getContextController().getWebSocketContext(path);
+		boolean defContext = false;
+		if (context == null) {
+			context = configuration.getContextController().getWebSocketDefault();
+			defContext = true;
+		}
+		if (context != null && (defContext || context.pathMatch(path))) {
+			try {
+				ProteusWebSocketConnection websocket = new ProteusWebSocketConnection(client, context, path, host, headers);
+				ProteusWebSocketConnectionManager.getConnectionManager().startConnection(websocket);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 		}
 	}
 	
