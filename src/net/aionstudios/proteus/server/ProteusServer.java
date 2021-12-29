@@ -9,25 +9,23 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 import net.aionstudios.proteus.api.ProteusImplementer;
-import net.aionstudios.proteus.api.context.ProteusHttpContext;
-import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
 import net.aionstudios.proteus.api.util.StreamUtils;
 import net.aionstudios.proteus.compression.CompressionEncoding;
-import net.aionstudios.proteus.configuration.EndpointConfiguration;
 import net.aionstudios.proteus.error.ErrorResponse;
-import net.aionstudios.proteus.header.HeaderValue;
 import net.aionstudios.proteus.header.ProteusHeaderBuilder;
 import net.aionstudios.proteus.header.ProteusHttpHeaders;
 import net.aionstudios.proteus.request.ProteusHttpRequest;
 import net.aionstudios.proteus.request.ProteusWebSocketConnection;
 import net.aionstudios.proteus.request.ProteusWebSocketConnectionManager;
+import net.aionstudios.proteus.request.ProteusWebSocketRequest;
 import net.aionstudios.proteus.response.ProteusHttpResponse;
 import net.aionstudios.proteus.response.ResponseCode;
+import net.aionstudios.proteus.routing.Router;
 
 public class ProteusServer {
 	
 	private ProteusImplementer implementer;
-	private EndpointConfiguration configuration;
+	private Router router;
 	
 	private ServerSocket server;
 	private Thread listenThread;
@@ -37,9 +35,9 @@ public class ProteusServer {
 	
 	private Executor executor;
 
-	public ProteusServer(ProteusImplementer implementer, EndpointConfiguration configuration) {
+	public ProteusServer(ProteusImplementer implementer, Router router) {
 		this.implementer = implementer;
-		this.configuration = configuration;
+		this.router = router;
 		running = false;
 		stopped = true;
 		executor = Executors.newCachedThreadPool();
@@ -54,7 +52,7 @@ public class ProteusServer {
 				@Override
 				public void run() {
 					try {
-						server = new ServerSocket(configuration.getPort());
+						server = new ServerSocket(router.getPort());
 						while (running) {
 							Socket client = server.accept();
 							executor.execute(new Runnable() {
@@ -119,21 +117,30 @@ public class ProteusServer {
         
         if (version.equals("HTTP/1.1")) {
         	if (method.equals("GET") && headers.hasHeader("Sec-WebSocket-Key")) {
-        		startWebSocketConnection(client, path, host, headers);
+        		ProteusWebSocketRequest request = new ProteusWebSocketRequest(client, path, host, headers, router);
+        		if (request.routed()) {
+        			startWebSocketConnection(client, request);
+        		} else {
+        			ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.NOT_FOUND, client);
+	        	}
         	} else {
 	        	CompressionEncoding ce = headers.hasHeader("Accept-Encoding") ? 
 	    				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
 	    					CompressionEncoding.NONE;
-	        	ProteusHttpRequest request = new ProteusHttpRequest(client, method, version, path, host, headers);
-	        	switch(method) {
-	        	case "GET":
-	        		respondWithContext(request, client.getOutputStream(), ce);
-	        		break;
-	        	case "POST":
-	        		respondWithContext(request, client.getOutputStream(), ce);
-	        		break;
-	        	default:
-	        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.METHOD_NOT_ALLOWED, client);
+	        	ProteusHttpRequest request = new ProteusHttpRequest(client, method, version, path, host, headers, router);
+	        	if (request.routed()) {
+		        	switch(method) {
+		        	case "GET":
+		        		respondWithContext(request, client.getOutputStream(), ce);
+		        		break;
+		        	case "POST":
+		        		respondWithContext(request, client.getOutputStream(), ce);
+		        		break;
+		        	default:
+		        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.METHOD_NOT_ALLOWED, client);
+		        	}
+	        	} else {
+	        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.NOT_FOUND, client);
 	        	}
         	}
         } else {
@@ -142,34 +149,16 @@ public class ProteusServer {
 	}
 	
 	private void respondWithContext(ProteusHttpRequest request, OutputStream outputStream, CompressionEncoding encoding) {
-		String path = request.getPath();
-		ProteusHttpContext context = configuration.getContextController().getHttpContext(path);
-		boolean defContext = false;
-		if (context == null) {
-			context = configuration.getContextController().getHttpDefault();
-			defContext = true;
-		}
-		if (context != null && (defContext || context.pathMatch(path))) {
-			ProteusHttpResponse response = new ProteusHttpResponse(outputStream, encoding);
-			context.handle(request, response);
-			// TODO this returns a gz download and it shouldnt
-		}
+		ProteusHttpResponse response = new ProteusHttpResponse(outputStream, encoding);
+		request.getContext().handle(request, response);
 	}
 	
-	private void startWebSocketConnection(Socket client, String path, String host, ProteusHttpHeaders headers) {
-		ProteusWebSocketContext context = configuration.getContextController().getWebSocketContext(path);
-		boolean defContext = false;
-		if (context == null) {
-			context = configuration.getContextController().getWebSocketDefault();
-			defContext = true;
-		}
-		if (context != null && (defContext || context.pathMatch(path))) {
-			try {
-				ProteusWebSocketConnection websocket = new ProteusWebSocketConnection(client, context, path, host, headers);
-				ProteusWebSocketConnectionManager.getConnectionManager().startConnection(websocket);
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
+	private void startWebSocketConnection(Socket client, ProteusWebSocketRequest request) {
+		try {
+			ProteusWebSocketConnection websocket = new ProteusWebSocketConnection(client, request);
+			ProteusWebSocketConnectionManager.getConnectionManager().startConnection(websocket);
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 	}
 	
@@ -191,8 +180,8 @@ public class ProteusServer {
 		return implementer;
 	}
 	
-	public EndpointConfiguration getConfiguration() {
-		return configuration;
+	public Router getRouter() {
+		return router;
 	}
 	
 }

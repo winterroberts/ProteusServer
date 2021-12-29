@@ -1,6 +1,5 @@
 package net.aionstudios.proteus;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 import net.aionstudios.aionlog.AnsiOut;
@@ -9,18 +8,18 @@ import net.aionstudios.aionlog.StandardOverride;
 import net.aionstudios.aionlog.SubConsolePrefix;
 import net.aionstudios.proteus.api.ProteusAPI;
 import net.aionstudios.proteus.api.ProteusImplementer;
-import net.aionstudios.proteus.api.context.ProteusContext;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
 import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
 import net.aionstudios.proteus.configuration.EndpointConfiguration;
 import net.aionstudios.proteus.configuration.EndpointType;
-import net.aionstudios.proteus.fileio.MimeType;
-import net.aionstudios.proteus.request.MultipartFileStream;
 import net.aionstudios.proteus.request.ProteusHttpRequest;
 import net.aionstudios.proteus.request.ProteusWebSocketConnection;
 import net.aionstudios.proteus.request.WebSocketBuffer;
 import net.aionstudios.proteus.response.ProteusHttpResponse;
-import net.aionstudios.proteus.response.ResponseCode;
+import net.aionstudios.proteus.routing.Hostname;
+import net.aionstudios.proteus.routing.PathInterpreter;
+import net.aionstudios.proteus.routing.Router;
+import net.aionstudios.proteus.routing.RouterBuilder;
 import net.aionstudios.proteus.server.ProteusServer;
 import net.aionstudios.proteus.server.api.ImplementerManager;
 import net.aionstudios.proteus.websocket.ClosingCode;
@@ -45,13 +44,21 @@ public class Proteus {
 		ProteusImplementer pi = new ProteusImplementer() {
 
 			@Override
-			public EndpointConfiguration[] onEnable() {
+			public Router onEnable() {
 				EndpointConfiguration ec = new EndpointConfiguration(EndpointType.MIXED, 80);
+				ec.getContextController().addHttpContext(new ProteusHttpContext() {
+
+					@Override
+					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
+						response.sendResponse("<html><body><h1>" + request.getPathComprehension().getPathParameters().getParameter("size") + "</h1></body></html>");
+					}
+					
+				}, new PathInterpreter("/I/*/:size"));
 				ec.getContextController().setHttpDefault(new ProteusHttpContext() {
 
 					@Override
 					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
-						response.sendResponse("<html><body><h1>Dayton</h1></body></html>");
+						response.sendResponse("<html><body><h1>Autumn</h1></body></html>");
 					}
 					
 				});
@@ -81,7 +88,9 @@ public class Proteus {
 					}
 					
 				});
-				return new EndpointConfiguration[] { ec };
+				RouterBuilder b = new RouterBuilder(ec);
+				b.addHostname(Hostname.ANY);
+				return b.build();
 			}
 
 			@Override
@@ -91,7 +100,7 @@ public class Proteus {
 			}
 			
 		};
-		ProteusServer server = new ProteusServer(pi, pi.onEnable()[0]);
+		ProteusServer server = new ProteusServer(pi, pi.onEnable());
 		server.start();
 	}
 
