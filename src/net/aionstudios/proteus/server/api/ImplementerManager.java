@@ -11,8 +11,10 @@ import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -24,8 +26,8 @@ public class ImplementerManager {
 	
 	private static URLClassLoader ucl;
 	private static ImplementerManager self;
-	private static List<ProteusImplementer> implementers = new ArrayList<>();
-	private static Map<ProteusImplementer, ProteusServer> serverMap = new HashMap<>();
+	private static Set<ProteusImplementer> implementers;
+	private static Map<ProteusImplementer, ProteusServer> serverMap;
 	private static boolean discoveredImplementers = false;
 	private static boolean enabledImplementers = false;
 	
@@ -33,6 +35,8 @@ public class ImplementerManager {
 	
 	private ImplementerManager() {
 		self = this;
+		implementers = new HashSet<>();
+		serverMap = new HashMap<>();
 		prefixMap.put("net.aionstudios.proteus", "");
 	}
 	
@@ -135,6 +139,10 @@ public class ImplementerManager {
 			}
 		}
 		return pkg;
+	}
+	
+	public Set<ProteusImplementer> getImplementers() {
+		return implementers;
 	}
 	
 	/**

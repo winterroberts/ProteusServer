@@ -1,6 +1,10 @@
 package net.aionstudios.proteus;
 
-import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 
 import net.aionstudios.aionlog.AnsiOut;
 import net.aionstudios.aionlog.Logger;
@@ -9,22 +13,23 @@ import net.aionstudios.aionlog.SubConsolePrefix;
 import net.aionstudios.proteus.api.ProteusAPI;
 import net.aionstudios.proteus.api.ProteusImplementer;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
-import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
 import net.aionstudios.proteus.configuration.EndpointConfiguration;
 import net.aionstudios.proteus.configuration.EndpointType;
 import net.aionstudios.proteus.request.ProteusHttpRequest;
-import net.aionstudios.proteus.request.ProteusWebSocketConnection;
-import net.aionstudios.proteus.request.WebSocketBuffer;
 import net.aionstudios.proteus.response.ProteusHttpResponse;
+import net.aionstudios.proteus.routing.CompositeRouter;
 import net.aionstudios.proteus.routing.Hostname;
 import net.aionstudios.proteus.routing.PathInterpreter;
 import net.aionstudios.proteus.routing.Router;
 import net.aionstudios.proteus.routing.RouterBuilder;
 import net.aionstudios.proteus.server.ProteusServer;
 import net.aionstudios.proteus.server.api.ImplementerManager;
-import net.aionstudios.proteus.websocket.ClosingCode;
 
 public class Proteus {
+	
+	private static Map<Integer, CompositeRouter> routers;
+	
+	private static Set<ProteusServer> servers;
 	
 	public static void main(String[] args) {
 		// Pythia Console, Horae Cron
@@ -41,56 +46,43 @@ public class Proteus {
 			
 		});
 		StandardOverride.enableOverride();
-		ProteusImplementer pi = new ProteusImplementer() {
+		routers = new HashMap<>();
+		for (ProteusImplementer implementer : ImplementerManager.getInstance().getImplementers()) {
+			// Check enabled
+			Router r = implementer.onEnable();
+			if (r != null) {
+				if (!routers.containsKey(r.getPort())) {
+					routers.put(r.getPort(), new CompositeRouter(r));
+				}
+			}
+		}
+		servers = new HashSet<>();
+		
+		ProteusImplementer system = new ProteusImplementer() {
 
 			@Override
 			public Router onEnable() {
-				EndpointConfiguration ec = new EndpointConfiguration(EndpointType.MIXED, 80);
-				ec.getContextController().addHttpContext(new ProteusHttpContext() {
-
-					@Override
-					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
-						response.sendResponse("<html><body><h1>" + request.getPathComprehension().getPathParameters().getParameter("size") + "</h1></body></html>");
-					}
-					
-				}, new PathInterpreter("/I/*/:size"));
+				Hostname host = new Hostname("localhost");
+				EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
 				ec.getContextController().setHttpDefault(new ProteusHttpContext() {
 
 					@Override
 					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
-						response.sendResponse("<html><body><h1>Autumn</h1></body></html>");
+						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0</h1></body></html>");
+					}
+				
+				});
+				ec.getContextController().addHttpContext(new ProteusHttpContext() {
+					
+					@Override
+					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
+						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 " + (request.getPathComprehension().getPathParameters().hasParameter("name") ? request.getPathComprehension().getPathParameters().getParameter("name") : "special") + "</h1></body></html>");
 					}
 					
-				});
-				ec.getContextController().setWebSocketDefault(new ProteusWebSocketContext() {
-
-					@Override
-					public void onOpen(ProteusWebSocketConnection connection) {
-						System.out.println("Connected: " + connection.toString());
-					}
-
-					@Override
-					public void onMessage(ProteusWebSocketConnection connection, WebSocketBuffer message) {
-						System.out.println(new String(message.getData(), StandardCharsets.UTF_8));
-						connection.close(ClosingCode.NORMAL, new String(message.getData(), StandardCharsets.UTF_8));
-					}
-
-					@Override
-					public void onClose(ProteusWebSocketConnection connection) {
-						// TODO Auto-generated method stub
-						
-					}
-
-					@Override
-					public void onError(ProteusWebSocketConnection connection, Throwable throwable) {
-						// TODO Auto-generated method stub
-						
-					}
-					
-				});
-				RouterBuilder b = new RouterBuilder(ec);
-				b.addHostname(Hostname.ANY);
-				return b.build();
+				}, new PathInterpreter("/a/:name"), new PathInterpreter("/a"));
+				RouterBuilder rb = new RouterBuilder(ec);
+				rb.addHostname(host);
+				return rb.build();
 			}
 
 			@Override
@@ -100,8 +92,15 @@ public class Proteus {
 			}
 			
 		};
-		ProteusServer server = new ProteusServer(pi, pi.onEnable());
-		server.start();
+		ProteusServer s = new ProteusServer(system.onEnable().toComposite());
+		s.start();
+		servers.add(s);
+		
+		for (Entry<Integer, CompositeRouter> e : routers.entrySet()) {
+			ProteusServer server = new ProteusServer(e.getValue());
+			server.start();
+			servers.add(server);
+		}
 	}
 
 }

@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
@@ -20,12 +21,11 @@ import net.aionstudios.proteus.request.ProteusWebSocketConnectionManager;
 import net.aionstudios.proteus.request.ProteusWebSocketRequest;
 import net.aionstudios.proteus.response.ProteusHttpResponse;
 import net.aionstudios.proteus.response.ResponseCode;
-import net.aionstudios.proteus.routing.Router;
+import net.aionstudios.proteus.routing.CompositeRouter;
 
 public class ProteusServer {
 	
-	private ProteusImplementer implementer;
-	private Router router;
+	private CompositeRouter router;
 	
 	private ServerSocket server;
 	private Thread listenThread;
@@ -34,9 +34,8 @@ public class ProteusServer {
 	private boolean stopped;
 	
 	private Executor executor;
-
-	public ProteusServer(ProteusImplementer implementer, Router router) {
-		this.implementer = implementer;
+	
+	public ProteusServer(CompositeRouter router) {
 		this.router = router;
 		running = false;
 		stopped = true;
@@ -77,7 +76,7 @@ public class ProteusServer {
 					
 			});
 			listenThread.start();
-			System.out.println("Server started!");
+			System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode.");
 		}
 	}
 	
@@ -176,11 +175,7 @@ public class ProteusServer {
 		return stopped;
 	}
 	
-	public ProteusImplementer getImplementer() {
-		return implementer;
-	}
-	
-	public Router getRouter() {
+	public CompositeRouter getRouter() {
 		return router;
 	}
 	
