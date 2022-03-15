@@ -200,7 +200,7 @@ public class ImplementerManager {
 		try {
 			Class<?> classToLoad = Class.forName(iPath, true, ucl);
 			//A neat trick to prevent disabled implementers from running their code.
-			implementers.add((ProteusImplementer) ObjectFactory.getInstance().newInstance(classToLoad));
+			implementers.add((ProteusImplementer) ObjectInstantiator.getInstance().newInstance(classToLoad));
 			System.out.println("Success loading implementer: "+iPath);
 		} catch (ClassNotFoundException e) {
 			System.err.println("Failed loading implementer at '"+iPath+"'!");

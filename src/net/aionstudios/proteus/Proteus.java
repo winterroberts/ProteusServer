@@ -1,5 +1,6 @@
 package net.aionstudios.proteus;
 
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -62,7 +63,7 @@ public class Proteus {
 
 			@Override
 			public Router onEnable() {
-				Hostname host = new Hostname("localhost");
+				Hostname host = new Hostname("10.0.0.70");
 				EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
 				ec.getContextController().setHttpDefault(new ProteusHttpContext() {
 
@@ -76,7 +77,13 @@ public class Proteus {
 					
 					@Override
 					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
-						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 " + (request.getPathComprehension().getPathParameters().hasParameter("name") ? request.getPathComprehension().getPathParameters().getParameter("name") : "special") + "</h1></body></html>");
+						if (request.getPathComprehension().getPathParameters().hasParameter("name")) {
+							byte[] decodedBytes = Base64.getDecoder().decode(request.getPathComprehension().getPathParameters().getParameter("name"));
+							String decodedString = new String(decodedBytes);
+							response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 " + decodedString + "</h1></body></html>");
+						} else {
+							response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 special</h1></body></html>");
+						}
 					}
 					
 				}, new PathInterpreter("/a/:name"), new PathInterpreter("/a"));

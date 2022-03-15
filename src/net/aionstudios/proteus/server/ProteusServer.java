@@ -23,6 +23,12 @@ import net.aionstudios.proteus.response.ProteusHttpResponse;
 import net.aionstudios.proteus.response.ResponseCode;
 import net.aionstudios.proteus.routing.CompositeRouter;
 
+/**
+ * Server class which sets up server socket and listens for new connections.
+ * 
+ * @author Winter Roberts
+ *
+ */
 public class ProteusServer {
 	
 	private CompositeRouter router;
@@ -35,6 +41,11 @@ public class ProteusServer {
 	
 	private Executor executor;
 	
+	/**
+	 * Creates a new server which listens according to the router(s) provided.
+	 * 
+	 * @param router A {@link CompositeRouter}, which may only contain one {@link Router}.
+	 */
 	public ProteusServer(CompositeRouter router) {
 		this.router = router;
 		running = false;
@@ -42,6 +53,9 @@ public class ProteusServer {
 		executor = Executors.newCachedThreadPool();
 	}
 	
+	/**
+	 * Opens listener threads and registers closing hooks.
+	 */
 	public void start() {
 		if (!running) {
 			running = true;
@@ -67,8 +81,6 @@ public class ProteusServer {
 							
 							});
 						}
-						ProteusWebSocketConnectionManager.getConnectionManager().closeAll();
-						stopped = true;
 					} catch (IOException e) {
 						e.printStackTrace();
 					}
@@ -80,6 +92,12 @@ public class ProteusServer {
 		}
 	}
 	
+	/**
+	 * Handle a new client connection, which must be an HTTP/1.1 connection (but may be a websocket upgrade request).
+	 * 
+	 * @param client The new client connection to be handled.
+	 * @throws IOException If there is an error reading from the socket.
+	 */
 	private void clientHandler(Socket client) throws IOException {
 		InputStream inputStream = client.getInputStream();
 		
@@ -100,7 +118,7 @@ public class ProteusServer {
         String version = requestLine[2];
         String host = requestsLines[1].split(" ")[1];
 
-        ProteusHeaderBuilder headerBuilder = new ProteusHeaderBuilder();
+        ProteusHeaderBuilder headerBuilder = ProteusHeaderBuilder.newBuilder();
         for (int h = 2; h < requestsLines.length; h++) {
         	String header = requestsLines[h];
         	String[] headerSplit = header.split(":", 2);
@@ -147,11 +165,24 @@ public class ProteusServer {
         }
 	}
 	
+	/**
+	 * Directs a compiled request which matched a context on the endpoint to be handled by the context.
+	 * 
+	 * @param request The request which is being processed, including the context it matched.
+	 * @param outputStream The output stream which the response will be written to.
+	 * @param encoding The compression which will be used (as stipulated by mutual server-client support for it).
+	 */
 	private void respondWithContext(ProteusHttpRequest request, OutputStream outputStream, CompressionEncoding encoding) {
 		ProteusHttpResponse response = new ProteusHttpResponse(outputStream, encoding);
 		request.getContext().handle(request, response);
 	}
 	
+	/**
+	 * Opens a new websocket connection on a matched context.
+	 * 
+	 * @param client The client socket which connected.
+	 * @param request The request which is being processed, including the context it matched.
+	 */
 	private void startWebSocketConnection(Socket client, ProteusWebSocketRequest request) {
 		try {
 			ProteusWebSocketConnection websocket = new ProteusWebSocketConnection(client, request);
@@ -161,20 +192,34 @@ public class ProteusServer {
 		}
 	}
 	
+	/**
+	 * Stops the server, including running some shutdown events.
+	 */
 	public void stop() {
 		if (running) {
 			running = false;
+			ProteusWebSocketConnectionManager.getConnectionManager().closeAll();
+			stopped = true;
 		}
 	}
 	
+	/**
+	 * @return True if the server accept thread is running, false otherwise.
+	 */
 	public boolean isRunning() {
 		return running;
 	}
 	
+	/**
+	 * @return True is the server is stopped, false otherwise.
+	 */
 	public boolean isStopped() {
 		return stopped;
 	}
 	
+	/**
+	 * @return The router being used by the server.
+	 */
 	public CompositeRouter getRouter() {
 		return router;
 	}

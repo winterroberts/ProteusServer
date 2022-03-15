@@ -6,8 +6,20 @@ import java.net.Socket;
 
 import net.aionstudios.proteus.response.ResponseCode;
 
+/**
+ * A class which statically handles error pages.
+ * 
+ * @author Winter Roberts
+ *
+ */
 public class ErrorResponse {
 	
+	/**
+	 * Display an error response, generally, on the connection.
+	 * 
+	 * @param rc The ResponseCode to be used by the server.
+	 * @param client The connection to send the error response on.
+	 */
 	public static void sendUnmodifiableErrorResponse(ResponseCode rc, Socket client) {
 		try {
 			OutputStream clientOutput = client.getOutputStream();
@@ -23,5 +35,7 @@ public class ErrorResponse {
 			e.printStackTrace();
 		}
 	}
+	
+	// TODO: Add an error response which is sensitive to the endpoint the error occurs on.
 
 }
