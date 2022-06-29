@@ -5,23 +5,32 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
-import net.aionstudios.proteus.api.ProteusImplementer;
-import net.aionstudios.proteus.api.util.StreamUtils;
+import net.aionstudios.proteus.api.context.ProteusHttpContext;
+import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
+import net.aionstudios.proteus.api.event.HttpContextRoutedEvent;
+import net.aionstudios.proteus.api.event.WebSocketContextRoutedEvent;
+import net.aionstudios.proteus.api.request.ProteusHttpRequest;
+import net.aionstudios.proteus.api.request.ProteusHttpRequestImpl;
+import net.aionstudios.proteus.api.request.ProteusWebSocketConnection;
+import net.aionstudios.proteus.api.request.ProteusWebSocketConnectionImpl;
+import net.aionstudios.proteus.api.request.ProteusWebSocketConnectionManager;
+import net.aionstudios.proteus.api.request.ProteusWebSocketRequest;
+import net.aionstudios.proteus.api.request.ProteusWebSocketRequestImpl;
+import net.aionstudios.proteus.api.response.ProteusHttpResponse;
+import net.aionstudios.proteus.api.response.ProteusHttpResponseImpl;
+import net.aionstudios.proteus.api.response.ResponseCode;
 import net.aionstudios.proteus.compression.CompressionEncoding;
 import net.aionstudios.proteus.error.ErrorResponse;
 import net.aionstudios.proteus.header.ProteusHeaderBuilder;
 import net.aionstudios.proteus.header.ProteusHttpHeaders;
-import net.aionstudios.proteus.request.ProteusHttpRequest;
-import net.aionstudios.proteus.request.ProteusWebSocketConnection;
-import net.aionstudios.proteus.request.ProteusWebSocketConnectionManager;
-import net.aionstudios.proteus.request.ProteusWebSocketRequest;
-import net.aionstudios.proteus.response.ProteusHttpResponse;
-import net.aionstudios.proteus.response.ResponseCode;
 import net.aionstudios.proteus.routing.CompositeRouter;
+import net.aionstudios.proteus.routing.HttpRoute;
+import net.aionstudios.proteus.routing.WebSocketRoute;
+import net.aionstudios.proteus.util.StreamUtils;
+import net.winrob.commons.saon.EventDispatcher;
 
 /**
  * Server class which sets up server socket and listens for new connections.
@@ -41,6 +50,8 @@ public class ProteusServer {
 	
 	private Executor executor;
 	
+	private EventDispatcher dispatcher;
+	
 	/**
 	 * Creates a new server which listens according to the router(s) provided.
 	 * 
@@ -51,6 +62,7 @@ public class ProteusServer {
 		running = false;
 		stopped = true;
 		executor = Executors.newCachedThreadPool();
+		dispatcher = new EventDispatcher("Proteus");
 	}
 	
 	/**
@@ -134,9 +146,27 @@ public class ProteusServer {
         
         if (version.equals("HTTP/1.1")) {
         	if (method.equals("GET") && headers.hasHeader("Sec-WebSocket-Key")) {
-        		ProteusWebSocketRequest request = new ProteusWebSocketRequest(client, path, host, headers, router);
+        		ProteusWebSocketRequestImpl request = new ProteusWebSocketRequestImpl(client, path, host, headers, router);
         		if (request.routed()) {
-        			startWebSocketConnection(client, request);
+        			new WebSocketContextRoutedEvent() {
+
+						@Override
+						public ProteusWebSocketContext getContext() {
+							return request.getContext();
+						}
+
+						@Override
+						public WebSocketRoute getRoute() {
+							return request.getRoute();
+						}
+
+						@Override
+						protected boolean run() {
+							startWebSocketConnection(client, request);
+							return true;
+						}
+        				
+        			}.dispatch(dispatcher);
         		} else {
         			ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.NOT_FOUND, client);
 	        	}
@@ -144,18 +174,42 @@ public class ProteusServer {
 	        	CompressionEncoding ce = headers.hasHeader("Accept-Encoding") ? 
 	    				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
 	    					CompressionEncoding.NONE;
-	        	ProteusHttpRequest request = new ProteusHttpRequest(client, method, version, path, host, headers, router);
+	        	ProteusHttpRequestImpl request = new ProteusHttpRequestImpl(client, method, version, path, host, headers, router);
 	        	if (request.routed()) {
-		        	switch(method) {
-		        	case "GET":
-		        		respondWithContext(request, client.getOutputStream(), ce);
-		        		break;
-		        	case "POST":
-		        		respondWithContext(request, client.getOutputStream(), ce);
-		        		break;
-		        	default:
-		        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.METHOD_NOT_ALLOWED, client);
-		        	}
+	        		new HttpContextRoutedEvent() {
+
+						@Override
+						protected boolean run() {
+							try {
+								switch(method) {
+					        	case "GET":
+					        		respondWithContext(request, client.getOutputStream(), ce);
+					        		break;
+					        	case "POST":
+					        		respondWithContext(request, client.getOutputStream(), ce);
+					        		break;
+					        	default:
+					        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.METHOD_NOT_ALLOWED, client);
+					        		return false;
+					        	}
+								return true;
+							} catch (IOException e) {
+								e.printStackTrace();
+								return false;
+							}
+						}
+
+						@Override
+						public ProteusHttpContext getContext() {
+							return request.getContext();
+						}
+
+						@Override
+						public HttpRoute getRoute() {
+							return request.getRoute();
+						}
+	        			
+	        		}.dispatch(dispatcher);
 	        	} else {
 	        		ErrorResponse.sendUnmodifiableErrorResponse(ResponseCode.NOT_FOUND, client);
 	        	}
@@ -173,7 +227,7 @@ public class ProteusServer {
 	 * @param encoding The compression which will be used (as stipulated by mutual server-client support for it).
 	 */
 	private void respondWithContext(ProteusHttpRequest request, OutputStream outputStream, CompressionEncoding encoding) {
-		ProteusHttpResponse response = new ProteusHttpResponse(outputStream, encoding);
+		ProteusHttpResponse response = new ProteusHttpResponseImpl(outputStream, encoding);
 		request.getContext().handle(request, response);
 	}
 	
@@ -185,7 +239,7 @@ public class ProteusServer {
 	 */
 	private void startWebSocketConnection(Socket client, ProteusWebSocketRequest request) {
 		try {
-			ProteusWebSocketConnection websocket = new ProteusWebSocketConnection(client, request);
+			ProteusWebSocketConnection websocket = new ProteusWebSocketConnectionImpl(client, request);
 			ProteusWebSocketConnectionManager.getConnectionManager().startConnection(websocket);
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -215,6 +269,10 @@ public class ProteusServer {
 	 */
 	public boolean isStopped() {
 		return stopped;
+	}
+	
+	public EventDispatcher getEventDispatcher() {
+		return dispatcher;
 	}
 	
 	/**

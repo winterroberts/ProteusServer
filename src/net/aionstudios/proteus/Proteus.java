@@ -1,5 +1,7 @@
 package net.aionstudios.proteus;
 
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,10 +16,11 @@ import net.aionstudios.aionlog.SubConsolePrefix;
 import net.aionstudios.proteus.api.ProteusAPI;
 import net.aionstudios.proteus.api.ProteusImplementer;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
+import net.aionstudios.proteus.api.event.HttpContextRoutedEvent;
+import net.aionstudios.proteus.api.request.ProteusHttpRequest;
+import net.aionstudios.proteus.api.response.ProteusHttpResponse;
 import net.aionstudios.proteus.configuration.EndpointConfiguration;
 import net.aionstudios.proteus.configuration.EndpointType;
-import net.aionstudios.proteus.request.ProteusHttpRequest;
-import net.aionstudios.proteus.response.ProteusHttpResponse;
 import net.aionstudios.proteus.routing.CompositeRouter;
 import net.aionstudios.proteus.routing.Hostname;
 import net.aionstudios.proteus.routing.PathInterpreter;
@@ -25,6 +28,8 @@ import net.aionstudios.proteus.routing.Router;
 import net.aionstudios.proteus.routing.RouterBuilder;
 import net.aionstudios.proteus.server.ProteusServer;
 import net.aionstudios.proteus.server.api.ImplementerManager;
+import net.winrob.commons.saon.EventDispatcher;
+import net.winrob.commons.saon.EventListener;
 
 public class Proteus {
 	
@@ -63,23 +68,14 @@ public class Proteus {
 
 			@Override
 			public Router onEnable() {
-				Hostname host = new Hostname("10.0.0.70");
+				Hostname host = new Hostname("127.0.0.1");
 				EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
-				ec.getContextController().setHttpDefault(new ProteusHttpContext() {
-
-					@Override
-					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
-						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0</h1></body></html>");
-					}
-				
-				});
 				ec.getContextController().addHttpContext(new ProteusHttpContext() {
 					
 					@Override
 					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
 						if (request.getPathComprehension().getPathParameters().hasParameter("name")) {
-							byte[] decodedBytes = Base64.getDecoder().decode(request.getPathComprehension().getPathParameters().getParameter("name"));
-							String decodedString = new String(decodedBytes);
+							String decodedString = URLDecoder.decode(request.getPathComprehension().getPathParameters().getParameter("name"), StandardCharsets.UTF_8);
 							response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 " + decodedString + "</h1></body></html>");
 						} else {
 							response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 special</h1></body></html>");
@@ -97,9 +93,22 @@ public class Proteus {
 				// TODO Auto-generated method stub
 				
 			}
+
+			@Override
+			public void onStart(EventDispatcher dispatcher) {
+				dispatcher.addEventListener(new EventListener() {
+					
+					@EventHandler
+					public void onHttpContextRouter(HttpContextRoutedEvent e) {
+						System.out.println(e.getRoute().getPathComprehension().getPath());
+					}
+				
+				});
+			}
 			
 		};
 		ProteusServer s = new ProteusServer(system.onEnable().toComposite());
+		system.onStart(s.getEventDispatcher());
 		s.start();
 		servers.add(s);
 		

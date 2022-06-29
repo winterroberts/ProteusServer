@@ -4,7 +4,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.Socket;
 
-import net.aionstudios.proteus.response.ResponseCode;
+import net.aionstudios.proteus.api.response.ResponseCode;
 
 /**
  * A class which statically handles error pages.
