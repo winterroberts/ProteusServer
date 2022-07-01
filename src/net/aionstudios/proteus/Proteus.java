@@ -14,7 +14,8 @@ import net.aionstudios.aionlog.Logger;
 import net.aionstudios.aionlog.StandardOverride;
 import net.aionstudios.aionlog.SubConsolePrefix;
 import net.aionstudios.proteus.api.ProteusAPI;
-import net.aionstudios.proteus.api.ProteusImplementer;
+import net.aionstudios.proteus.api.ProteusApp;
+import net.aionstudios.proteus.api.ProteusPlugin;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
 import net.aionstudios.proteus.api.event.HttpContextRoutedEvent;
 import net.aionstudios.proteus.api.request.ProteusHttpRequest;
@@ -27,7 +28,7 @@ import net.aionstudios.proteus.routing.PathInterpreter;
 import net.aionstudios.proteus.routing.Router;
 import net.aionstudios.proteus.routing.RouterBuilder;
 import net.aionstudios.proteus.server.ProteusServer;
-import net.aionstudios.proteus.server.api.ImplementerManager;
+import net.aionstudios.proteus.server.api.PluginManager;
 import net.winrob.commons.saon.EventDispatcher;
 import net.winrob.commons.saon.EventListener;
 
@@ -47,45 +48,30 @@ public class Proteus {
 
 			@Override
 			public String makeSubConsolePrefix() {
-				return ImplementerManager.getInstance().getPackagePrefix(new Exception().getStackTrace()[3].getClassName());
+				return PluginManager.getInstance().getPackagePrefix(new Exception().getStackTrace()[3].getClassName());
 			}
 			
 		});
 		StandardOverride.enableOverride();
+		
+		ProteusServer s = new ProteusServer(ProteusTestApp.class);
+		
 		routers = new HashMap<>();
-		for (ProteusImplementer implementer : ImplementerManager.getInstance().getImplementers()) {
-			// Check enabled
-			Router r = implementer.onEnable();
-			if (r != null) {
-				if (!routers.containsKey(r.getPort())) {
-					routers.put(r.getPort(), new CompositeRouter(r));
-				}
-			}
-		}
+		PluginManager.getInstance().enablePlugins();
 		servers = new HashSet<>();
 		
-		ProteusImplementer system = new ProteusImplementer() {
+		ProteusPlugin system = new ProteusPlugin() {
 
 			@Override
-			public Router onEnable() {
-				Hostname host = new Hostname("127.0.0.1");
-				EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
-				ec.getContextController().addHttpContext(new ProteusHttpContext() {
+			public void onEnable(EventDispatcher dispatcher) {
+				dispatcher.addEventListener(new EventListener() {
 					
-					@Override
-					public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
-						if (request.getPathComprehension().getPathParameters().hasParameter("name")) {
-							String decodedString = URLDecoder.decode(request.getPathComprehension().getPathParameters().getParameter("name"), StandardCharsets.UTF_8);
-							response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 " + decodedString + "</h1></body></html>");
-						} else {
-							response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 special</h1></body></html>");
-						}
+					@EventHandler
+					public void onHttpContextRouted(HttpContextRoutedEvent e) {
+						System.out.println(e.getRoute().getPathComprehension().getPath());
 					}
-					
-				}, new PathInterpreter("/a/:name"), new PathInterpreter("/a"));
-				RouterBuilder rb = new RouterBuilder(ec);
-				rb.addHostname(host);
-				return rb.build();
+				
+				});
 			}
 
 			@Override
@@ -93,30 +79,38 @@ public class Proteus {
 				// TODO Auto-generated method stub
 				
 			}
-
-			@Override
-			public void onStart(EventDispatcher dispatcher) {
-				dispatcher.addEventListener(new EventListener() {
-					
-					@EventHandler
-					public void onHttpContextRouter(HttpContextRoutedEvent e) {
-						System.out.println(e.getRoute().getPathComprehension().getPath());
-					}
-				
-				});
-			}
 			
 		};
-		ProteusServer s = new ProteusServer(system.onEnable().toComposite());
-		system.onStart(s.getEventDispatcher());
+		system.onEnable(s.getEventDispatcher());
+
 		s.start();
 		servers.add(s);
-		
-		for (Entry<Integer, CompositeRouter> e : routers.entrySet()) {
-			ProteusServer server = new ProteusServer(e.getValue());
-			server.start();
-			servers.add(server);
+	}
+	
+	public class ProteusTestApp implements ProteusApp {
+
+		@Override
+		public Set<CompositeRouter> build() {
+			Hostname host = new Hostname("127.0.0.1");
+			EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
+			ec.getContextController().addHttpContext(new ProteusHttpContext() {
+				
+				@Override
+				public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
+					if (request.getPathComprehension().getPathParameters().hasParameter("name")) {
+						String decodedString = URLDecoder.decode(request.getPathComprehension().getPathParameters().getParameter("name"), StandardCharsets.UTF_8);
+						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 " + decodedString + "</h1></body></html>");
+					} else {
+						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 special</h1></body></html>");
+					}
+				}
+				
+			}, new PathInterpreter("/a/:name"), new PathInterpreter("/a"));
+			RouterBuilder rb = new RouterBuilder();
+			rb.addHostname(host);
+			return Set.of(rb.build(ec).toComposite());
 		}
+		
 	}
 
 }

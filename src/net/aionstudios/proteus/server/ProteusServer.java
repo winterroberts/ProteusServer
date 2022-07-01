@@ -5,9 +5,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+import net.aionstudios.proteus.api.ProteusApp;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
 import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
 import net.aionstudios.proteus.api.event.HttpContextRoutedEvent;
@@ -29,6 +31,7 @@ import net.aionstudios.proteus.header.ProteusHttpHeaders;
 import net.aionstudios.proteus.routing.CompositeRouter;
 import net.aionstudios.proteus.routing.HttpRoute;
 import net.aionstudios.proteus.routing.WebSocketRoute;
+import net.aionstudios.proteus.server.api.ObjectInstantiator;
 import net.aionstudios.proteus.util.StreamUtils;
 import net.winrob.commons.saon.EventDispatcher;
 
@@ -40,7 +43,10 @@ import net.winrob.commons.saon.EventDispatcher;
  */
 public class ProteusServer {
 	
-	private CompositeRouter router;
+	private ProteusApp app;
+	private String appName;
+	
+	private Set<CompositeRouter> routers;
 	
 	private ServerSocket server;
 	private Thread listenThread;
@@ -57,12 +63,14 @@ public class ProteusServer {
 	 * 
 	 * @param router A {@link CompositeRouter}, which may only contain one {@link Router}.
 	 */
-	public ProteusServer(CompositeRouter router) {
-		this.router = router;
+	public ProteusServer(Class<? extends ProteusApp> app) {
+		this.app = ObjectInstantiator.getInstance().newInstance(app);
+		appName = app.getTypeName();
+		routers = this.app.build();
 		running = false;
 		stopped = true;
 		executor = Executors.newCachedThreadPool();
-		dispatcher = new EventDispatcher("Proteus");
+		dispatcher = new EventDispatcher(appName);
 	}
 	
 	/**
@@ -72,35 +80,37 @@ public class ProteusServer {
 		if (!running) {
 			running = true;
 			stopped = false;
-			listenThread = new Thread(new Runnable() {
-
-				@Override
-				public void run() {
-					try {
-						server = new ServerSocket(router.getPort());
-						while (running) {
-							Socket client = server.accept();
-							executor.execute(new Runnable() {
-
-								@Override
-								public void run() {
-									try {
-										clientHandler(client);
-									} catch (IOException e) {
-										e.printStackTrace();
+			for (CompositeRouter router : routers) {
+				listenThread = new Thread(new Runnable() {
+	
+					@Override
+					public void run() {
+						try {
+							server = new ServerSocket(router.getPort());
+							while (running) {
+								Socket client = server.accept();
+								executor.execute(new Runnable() {
+	
+									@Override
+									public void run() {
+										try {
+											clientHandler(client, router);
+										} catch (IOException e) {
+											e.printStackTrace();
+										}
 									}
-								}
-							
-							});
+								
+								});
+							}
+						} catch (IOException e) {
+							e.printStackTrace();
 						}
-					} catch (IOException e) {
-						e.printStackTrace();
 					}
-				}
-					
-			});
-			listenThread.start();
-			System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode.");
+						
+				});
+				listenThread.start();
+				System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode.");
+			}
 		}
 	}
 	
@@ -110,7 +120,7 @@ public class ProteusServer {
 	 * @param client The new client connection to be handled.
 	 * @throws IOException If there is an error reading from the socket.
 	 */
-	private void clientHandler(Socket client) throws IOException {
+	private void clientHandler(Socket client, CompositeRouter router) throws IOException {
 		InputStream inputStream = client.getInputStream();
 		
 		StringBuilder requestBuilder = new StringBuilder();
@@ -276,10 +286,10 @@ public class ProteusServer {
 	}
 	
 	/**
-	 * @return The router being used by the server.
+	 * @return The routers being used by the server.
 	 */
-	public CompositeRouter getRouter() {
-		return router;
+	public Set<CompositeRouter> getRouters() {
+		return routers;
 	}
 	
 }
