@@ -27,23 +27,22 @@ import net.aionstudios.proteus.routing.Hostname;
 import net.aionstudios.proteus.routing.PathInterpreter;
 import net.aionstudios.proteus.routing.Router;
 import net.aionstudios.proteus.routing.RouterBuilder;
-import net.aionstudios.proteus.server.ProteusServer;
 import net.aionstudios.proteus.server.api.PluginManager;
 import net.winrob.commons.saon.EventDispatcher;
 import net.winrob.commons.saon.EventListener;
 
 public class Proteus {
 	
-	private static Map<Integer, CompositeRouter> routers;
+	private static boolean init = false;
 	
-	private static Set<ProteusServer> servers;
+	private static Map<Class<? extends ProteusApp>, ProteusServer> servers;
 	
-	public static void main(String[] args) {
+	public static void init() {
+		if (init) return;
 		// Pythia Console, Horae Cron
 		ProteusAPI.enableBrotli();
 		Logger.setup();
 		AnsiOut.initialize();
-		AnsiOut.setStreamPrefix("Proteus");
 		AnsiOut.oneTimeSetSCP(new SubConsolePrefix() {
 
 			@Override
@@ -54,37 +53,16 @@ public class Proteus {
 		});
 		StandardOverride.enableOverride();
 		
-		ProteusServer s = new ProteusServer(ProteusTestApp.class);
-		
-		routers = new HashMap<>();
-		PluginManager.getInstance().enablePlugins();
-		servers = new HashSet<>();
-		
-		ProteusPlugin system = new ProteusPlugin() {
-
-			@Override
-			public void onEnable(EventDispatcher dispatcher) {
-				dispatcher.addEventListener(new EventListener() {
-					
-					@EventHandler
-					public void onHttpContextRouted(HttpContextRoutedEvent e) {
-						System.out.println(e.getRoute().getPathComprehension().getPath());
-					}
-				
-				});
-			}
-
-			@Override
-			public void onDisable() {
-				// TODO Auto-generated method stub
-				
-			}
-			
-		};
-		system.onEnable(s.getEventDispatcher());
-
-		s.start();
-		servers.add(s);
+		servers = new HashMap<>();
+		init = true;
+	}
+	
+	protected static void addServer(ProteusServer server) {
+		servers.put(server.getApp(), server);
+	}
+	
+	protected static void removeServer(ProteusServer server) {
+		servers.remove(server.getApp());
 	}
 	
 	public class ProteusTestApp implements ProteusApp {

@@ -1,4 +1,4 @@
-package net.aionstudios.proteus.server;
+package net.aionstudios.proteus;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -78,6 +78,10 @@ public class ProteusServer {
 	 */
 	public void start() {
 		if (!running) {
+			if (routers == null) {
+				System.err.println("Failed to start " + app.getClass().getCanonicalName() + "! No router");
+				return;
+			}
 			running = true;
 			stopped = false;
 			for (CompositeRouter router : routers) {
@@ -111,7 +115,12 @@ public class ProteusServer {
 				listenThread.start();
 				System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode.");
 			}
+			Proteus.addServer(this);
 		}
+	}
+	
+	public Class<? extends ProteusApp> getApp() {
+		return app.getClass();
 	}
 	
 	/**
@@ -264,6 +273,7 @@ public class ProteusServer {
 			running = false;
 			ProteusWebSocketConnectionManager.getConnectionManager().closeAll();
 			stopped = true;
+			Proteus.removeServer(this);
 		}
 	}
 	

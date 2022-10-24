@@ -19,13 +19,13 @@ import net.aionstudios.proteus.header.ProteusHeaderBuilder;
 import net.aionstudios.proteus.header.ProteusHttpHeaders;
 import net.aionstudios.proteus.routing.Hostname;
 import net.aionstudios.proteus.util.SecurityUtils;
+import net.aionstudios.proteus.util.StreamUtils;
 import net.aionstudios.proteus.api.websocket.ClosingCode;
 import net.aionstudios.proteus.api.websocket.DataType;
 import net.aionstudios.proteus.api.websocket.OpCode;
-import net.aionstudios.proteus.api.websocket.ServerFrame;
-import net.aionstudios.proteus.api.websocket.ServerFrameImpl;
+import net.aionstudios.proteus.api.websocket.WebSocketFrame;
 import net.aionstudios.proteus.api.websocket.WebSocketState;
-import net.aionstudios.proteus.api.websocket.ServerFrameImpl.Callback;
+import net.aionstudios.proteus.api.websocket.WebSocketFrame.Callback;
 
 public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnection {
 	
@@ -42,7 +42,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	private WebSocketState state;
 	private WebSocketBuffer buffer;
 	
-	private BlockingDeque<ServerFrame> replyQueue;
+	private BlockingDeque<WebSocketFrame> replyQueue;
 	
 	private String lastPing;
 	private boolean heartbeatWaiting;
@@ -109,10 +109,11 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	
 	private void writeLoop() throws InterruptedException, IOException {
 		while (state != WebSocketState.CLOSED) {
-			ServerFrame replyFrame = replyQueue.take();
-			outputStream.write(replyFrame.getOpByte());
-			outputStream.write(replyFrame.getLengthBytes());
+			WebSocketFrame replyFrame = replyQueue.take();
+			if (replyFrame == null) continue;
+			outputStream.write(StreamUtils.joinByteArray(new byte[] {replyFrame.getOpByte()}, replyFrame.getLengthBytes()));
 			outputStream.write(replyFrame.getPayload());
+			outputStream.flush();
 			
 			if (replyFrame.isEnd()) {
 				replyFrame.callback();
@@ -122,7 +123,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 				} else if (diff > 20000 && !heartbeatWaiting) {
 					lastPing = SecurityUtils.genToken(16);
 					heartbeatWaiting = true;
-					replyQueue.offerFirst(ServerFrameImpl.pingFrame(lastPing, Callback.NULL));
+					replyQueue.offerFirst(WebSocketFrame.pingFrame(lastPing, Callback.NULL));
 				}
 			}
 		}
@@ -222,7 +223,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 				close(ClosingCode.PROTOCOL_ERROR, "Control frame size (125) exceeded in ping!");
 				return false;
 			} else {
-				replyQueue.add(ServerFrameImpl.pongFrame(new String(readFrame(read), StandardCharsets.UTF_8), new Callback() {
+				replyQueue.add(WebSocketFrame.pongFrame(new String(readFrame(read), StandardCharsets.UTF_8), new Callback() {
 
 					@Override
 					public void call() {
@@ -271,9 +272,9 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	}
 	
 	@Override
-	public void queueFrames(ServerFrame... frames) {
+	public void queueFrames(WebSocketFrame... frames) {
 		synchronized (replyQueue) {
-			for (ServerFrame frame : frames) {
+			for (WebSocketFrame frame : frames) {
 				replyQueue.add(frame);
 			}
 		}
@@ -326,7 +327,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	
 	private void close(ClosingCode code, String reason, Callback callback) {
 		state = WebSocketState.CLOSING;
-		replyQueue.offerFirst(ServerFrameImpl.closingFrame(code, reason, callback));
+		replyQueue.offerFirst(WebSocketFrame.closingFrame(code, reason, callback));
 	}
 	
 	protected Socket getClient() {

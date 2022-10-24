@@ -19,25 +19,27 @@ import java.util.Set;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import net.aionstudios.proteus.ProteusServer;
 import net.aionstudios.proteus.api.ProteusPlugin;
-import net.aionstudios.proteus.server.ProteusServer;
 
 public class PluginManager {
 	
 	private static URLClassLoader ucl;
-	private static PluginManager self;
 	private static Set<ProteusPlugin> plugins;
 	private static Map<ProteusPlugin, Set<ProteusServer>> serverMap;
 	private static boolean discoveredPlugins = false;
 	private static boolean enabledPlugins = false;
 	
-	private static Map<String, String> prefixMap = new HashMap<String, String>();
+	private static Map<String, String> prefixMap;
+	
+	private static PluginManager self;
 	
 	private PluginManager() {
-		self = this;
+		prefixMap = new HashMap<>();
 		plugins = new HashSet<>();
 		serverMap = new HashMap<>();
-		prefixMap.put("net.aionstudios.proteus", "");
+		prefixMap.put("net.aionstudios.proteus", "Proteus");
+		self = this;
 	}
 	
 	/**
