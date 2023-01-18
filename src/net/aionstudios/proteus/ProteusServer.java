@@ -9,6 +9,10 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
+import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLProtocolException;
+import javax.net.ssl.SSLSocket;
+
 import net.aionstudios.proteus.api.ProteusApp;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
 import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
@@ -48,7 +52,6 @@ public class ProteusServer {
 	
 	private Set<CompositeRouter> routers;
 	
-	private ServerSocket server;
 	private Thread listenThread;
 	
 	private boolean running;
@@ -90,7 +93,7 @@ public class ProteusServer {
 					@Override
 					public void run() {
 						try {
-							server = new ServerSocket(router.getPort());
+							ServerSocket server = router.createSocket();
 							while (running) {
 								Socket client = server.accept();
 								executor.execute(new Runnable() {
@@ -99,6 +102,10 @@ public class ProteusServer {
 									public void run() {
 										try {
 											clientHandler(client, router);
+										} catch(SSLProtocolException e) {
+											
+										} catch(SSLHandshakeException e) {
+											
 										} catch (IOException e) {
 											e.printStackTrace();
 										}
@@ -113,7 +120,7 @@ public class ProteusServer {
 						
 				});
 				listenThread.start();
-				System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode.");
+				System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode" + (router.isSecure() ? " (secure)" : "") + ".");
 			}
 			Proteus.addServer(this);
 		}
@@ -134,9 +141,6 @@ public class ProteusServer {
 		
 		StringBuilder requestBuilder = new StringBuilder();
         String line;
-        while (inputStream.available() == 0) {
-        	
-        }
         while (!(line = StreamUtils.readLine(inputStream, true)).isBlank()) {
         	requestBuilder.append(line + "\r\n");
         }
@@ -147,10 +151,9 @@ public class ProteusServer {
         String method = requestLine[0];
         String path = requestLine[1];
         String version = requestLine[2];
-        String host = requestsLines[1].split(" ")[1];
 
         ProteusHeaderBuilder headerBuilder = ProteusHeaderBuilder.newBuilder();
-        for (int h = 2; h < requestsLines.length; h++) {
+        for (int h = 1; h < requestsLines.length; h++) {
         	String header = requestsLines[h];
         	String[] headerSplit = header.split(":", 2);
         	if (headerSplit.length == 1 && headerSplit[0].length() > 0) {
@@ -165,7 +168,7 @@ public class ProteusServer {
         
         if (version.equals("HTTP/1.1")) {
         	if (method.equals("GET") && headers.hasHeader("Sec-WebSocket-Key")) {
-        		ProteusWebSocketRequestImpl request = new ProteusWebSocketRequestImpl(client, path, host, headers, router);
+        		ProteusWebSocketRequestImpl request = new ProteusWebSocketRequestImpl(client, path, headers, router);
         		if (request.routed()) {
         			new WebSocketContextRoutedEvent() {
 
@@ -193,7 +196,7 @@ public class ProteusServer {
 	        	CompressionEncoding ce = headers.hasHeader("Accept-Encoding") ? 
 	    				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
 	    					CompressionEncoding.NONE;
-	        	ProteusHttpRequestImpl request = new ProteusHttpRequestImpl(client, method, version, path, host, headers, router);
+	        	ProteusHttpRequestImpl request = new ProteusHttpRequestImpl(client, method, version, path, headers, router);
 	        	if (request.routed()) {
 	        		new HttpContextRoutedEvent() {
 

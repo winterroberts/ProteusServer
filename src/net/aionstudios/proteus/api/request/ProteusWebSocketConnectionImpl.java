@@ -14,10 +14,7 @@ import java.util.TimerTask;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 
-import net.aionstudios.proteus.api.context.ProteusWebSocketContext;
 import net.aionstudios.proteus.header.ProteusHeaderBuilder;
-import net.aionstudios.proteus.header.ProteusHttpHeaders;
-import net.aionstudios.proteus.routing.Hostname;
 import net.aionstudios.proteus.util.SecurityUtils;
 import net.aionstudios.proteus.util.StreamUtils;
 import net.aionstudios.proteus.api.websocket.ClosingCode;
@@ -33,11 +30,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	private InputStream inputStream;
 	private OutputStream outputStream;
 	
-	private ProteusWebSocketContext context;
-	private ProteusHttpHeaders headers;
-	
-	private String path;
-	private Hostname host;
+	private ProteusWebSocketRequest request;
 	
 	private WebSocketState state;
 	private WebSocketBuffer buffer;
@@ -59,10 +52,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 		this.client = client;
 		this.inputStream = client.getInputStream();
 		this.outputStream = client.getOutputStream();
-		this.context = request.getContext();
-		this.path = request.getPathComprehension().getPath();
-		this.host = request.getHostname();
-		this.headers = request.getHeaders();
+		this.request = request;
 		replyQueue = new LinkedBlockingDeque<>();
 		state = WebSocketState.CONNECTING;
 		heartbeat = 0;
@@ -70,7 +60,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	
 	protected void handshake() throws NoSuchAlgorithmException, IOException {
 		if (state == WebSocketState.CONNECTING) {
-			String webSocketKey = headers.getHeader("Sec-WebSocket-Key").getFirst().getValue();
+			String webSocketKey = request.getHeaders().getHeader("Sec-WebSocket-Key").getFirst().getValue();
 			String keyResponse = Base64.getEncoder().encodeToString(
 					MessageDigest.getInstance("SHA-1").digest(
 							(webSocketKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").getBytes("UTF-8")));
@@ -101,7 +91,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 				}
 				
 			});
-			context.onOpen(this);
+			request.getContext().onOpen(this);
 			reply.start();
 			readLoop();
 		}
@@ -111,9 +101,11 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 		while (state != WebSocketState.CLOSED) {
 			WebSocketFrame replyFrame = replyQueue.take();
 			if (replyFrame == null) continue;
-			outputStream.write(StreamUtils.joinByteArray(new byte[] {replyFrame.getOpByte()}, replyFrame.getLengthBytes()));
-			outputStream.write(replyFrame.getPayload());
-			outputStream.flush();
+			synchronized (outputStream) {
+				outputStream.write(StreamUtils.joinByteArray(new byte[] {replyFrame.getOpByte()}, replyFrame.getLengthBytes()));
+				outputStream.write(replyFrame.getPayload());
+				outputStream.flush();
+			}
 			
 			if (replyFrame.isEnd()) {
 				replyFrame.callback();
@@ -169,9 +161,9 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 				WebSocketBuffer finished = buffer;
 				buffer = null;
 				try {
-					context.onMessage(this, finished);
+					request.getContext().onMessage(this, finished);
 				} catch (Exception e) {
-					context.onError(this, e);
+					request.getContext().onError(this, e);
 				}
 			}
 		}
@@ -318,16 +310,18 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 				state = WebSocketState.CLOSED;
 				replyQueue.clear();
 				buffer = null;
-				client.close();
+				synchronized (outputStream) {
+					client.close();
+				}
 				ProteusWebSocketConnectionManager.getConnectionManager().removeConnection(this);
-				context.onClose(this);
+				request.getContext().onClose(this);
 			}
 		}
 	}
 	
 	private void close(ClosingCode code, String reason, Callback callback) {
 		state = WebSocketState.CLOSING;
-		replyQueue.offerFirst(WebSocketFrame.closingFrame(code, reason, callback));
+		replyQueue.offer(WebSocketFrame.closingFrame(code, reason, callback));
 	}
 	
 	protected Socket getClient() {
@@ -335,13 +329,8 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	}
 	
 	@Override
-	public Hostname getHost() {
-		return host;
-	}
-	
-	@Override
-	public String getPath() {
-		return path;
+	public ProteusWebSocketRequest getRequest() {
+		return request;
 	}
 
 	@Override

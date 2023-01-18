@@ -29,12 +29,11 @@ public class ProteusWebSocketRequestImpl implements ProteusWebSocketRequest {
 	 * 
 	 * @param client The client socket connection (for input and output streams).
 	 * @param path The path of this request.
-	 * @param host The host (domain or ip) this request targeted.
 	 * @param headers The {@link ProteusHttpHeaders} of this request.
 	 * @param router The {@link CompositeRouter} used by the endpoint to resolve the path request.
 	 */
-	public ProteusWebSocketRequestImpl(Socket client, String path, String host, ProteusHttpHeaders headers, CompositeRouter router) {
-		this.hostname = new Hostname(host);
+	public ProteusWebSocketRequestImpl(Socket client, String path, ProteusHttpHeaders headers, CompositeRouter router) {
+		this.hostname = new Hostname(headers.getHeader("Host").getFirst().getValue());
 		this.headers = headers;
 		route = router.getWebSocketRoute(hostname, resolveURI(path));
 		cookies = headers.hasHeader("Cookie") ? headers.getHeader("Cookie").getFirst().getParams() : null;

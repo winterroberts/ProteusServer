@@ -1,13 +1,21 @@
 package net.aionstudios.proteus;
 
+import java.io.File;
+import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.KeyManagementException;
+import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.CertificateException;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
+
+import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.SSLSocketFactory;
 
 import net.aionstudios.aionlog.AnsiOut;
 import net.aionstudios.aionlog.Logger;
@@ -15,9 +23,7 @@ import net.aionstudios.aionlog.StandardOverride;
 import net.aionstudios.aionlog.SubConsolePrefix;
 import net.aionstudios.proteus.api.ProteusAPI;
 import net.aionstudios.proteus.api.ProteusApp;
-import net.aionstudios.proteus.api.ProteusPlugin;
 import net.aionstudios.proteus.api.context.ProteusHttpContext;
-import net.aionstudios.proteus.api.event.HttpContextRoutedEvent;
 import net.aionstudios.proteus.api.request.ProteusHttpRequest;
 import net.aionstudios.proteus.api.response.ProteusHttpResponse;
 import net.aionstudios.proteus.configuration.EndpointConfiguration;
@@ -25,17 +31,20 @@ import net.aionstudios.proteus.configuration.EndpointType;
 import net.aionstudios.proteus.routing.CompositeRouter;
 import net.aionstudios.proteus.routing.Hostname;
 import net.aionstudios.proteus.routing.PathInterpreter;
-import net.aionstudios.proteus.routing.Router;
 import net.aionstudios.proteus.routing.RouterBuilder;
+import net.aionstudios.proteus.secure.KeyStoreLoader;
 import net.aionstudios.proteus.server.api.PluginManager;
-import net.winrob.commons.saon.EventDispatcher;
-import net.winrob.commons.saon.EventListener;
 
 public class Proteus {
 	
 	private static boolean init = false;
 	
 	private static Map<Class<? extends ProteusApp>, ProteusServer> servers;
+	
+	public static void main(String[] args) {
+		init();
+		new ProteusServer(ProteusTestApp.class).start();
+	}
 	
 	public static void init() {
 		if (init) return;
@@ -69,8 +78,8 @@ public class Proteus {
 
 		@Override
 		public Set<CompositeRouter> build() {
-			Hostname host = new Hostname("127.0.0.1");
-			EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
+			Hostname host = new Hostname("localhost");
+			EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 443);
 			ec.getContextController().addHttpContext(new ProteusHttpContext() {
 				
 				@Override
@@ -86,7 +95,17 @@ public class Proteus {
 			}, new PathInterpreter("/a/:name"), new PathInterpreter("/a"));
 			RouterBuilder rb = new RouterBuilder();
 			rb.addHostname(host);
-			return Set.of(rb.build(ec).toComposite());
+			
+			File keystore = new File("./ssl/localhost.jks");
+			SSLServerSocketFactory sslFactory = null;
+			try {
+				sslFactory = KeyStoreLoader.loadKeyStoreToSocketFactory(keystore, "123456", "123456", "localhost");
+			} catch (UnrecoverableKeyException | KeyManagementException | NoSuchAlgorithmException
+					| CertificateException | KeyStoreException | IOException | InvalidAlgorithmParameterException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			return Set.of(rb.build(ec).toComposite(sslFactory));
 		}
 		
 	}

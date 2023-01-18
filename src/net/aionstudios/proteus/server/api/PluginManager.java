@@ -223,4 +223,8 @@ public class PluginManager {
 		return nis;
 	}
 	
+	public void hidePrefix(String pkg) {
+		prefixMap.put(pkg, "");
+	}
+	
 }
