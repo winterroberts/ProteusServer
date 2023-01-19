@@ -1,4 +1,4 @@
-package net.aionstudios.proteus.api.request;
+package net.winrob.proteus.api.request;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -9,13 +9,17 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.List;
 
-import net.aionstudios.proteus.compression.CompressionEncoding;
-import net.aionstudios.proteus.compression.Compressor;
-import net.aionstudios.proteus.header.HeaderValue;
-import net.aionstudios.proteus.header.ProteusHeaderBuilder;
-import net.aionstudios.proteus.header.ProteusHttpHeaders;
-import net.aionstudios.proteus.header.QualityValue;
-import net.aionstudios.proteus.util.StreamUtils;
+import net.winrob.proteus.api.request.MultipartFileStream;
+import net.winrob.proteus.api.request.ParameterMap;
+import net.winrob.proteus.api.request.ProteusHttpRequest;
+import net.winrob.proteus.api.request.RequestBody;
+import net.winrob.proteus.compression.CompressionEncoding;
+import net.winrob.proteus.compression.Compressor;
+import net.winrob.proteus.header.HeaderValue;
+import net.winrob.proteus.header.ProteusHeaderBuilder;
+import net.winrob.proteus.header.ProteusHttpHeaders;
+import net.winrob.proteus.header.QualityValue;
+import net.winrob.proteus.util.StreamUtils;
 
 public class RequestBodyImpl implements RequestBody {
 	

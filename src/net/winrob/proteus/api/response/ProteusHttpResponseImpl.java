@@ -1,12 +1,14 @@
-package net.aionstudios.proteus.api.response;
+package net.winrob.proteus.api.response;
 
 import java.io.IOException;
 import java.io.OutputStream;
 
-import net.aionstudios.proteus.compression.CompressionEncoding;
-import net.aionstudios.proteus.compression.Compressor;
-import net.aionstudios.proteus.header.ProteusHeaderBuilder;
-import net.aionstudios.proteus.util.FormatUtils;
+import net.winrob.proteus.api.response.ProteusHttpResponse;
+import net.winrob.proteus.api.response.ResponseCode;
+import net.winrob.proteus.compression.CompressionEncoding;
+import net.winrob.proteus.compression.Compressor;
+import net.winrob.proteus.header.ProteusHeaderBuilder;
+import net.winrob.proteus.util.FormatUtils;
 
 public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 	
@@ -54,6 +56,8 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 	public void sendResponse(ResponseCode responseCode, byte[] response) {
 		if (!complete) {
 			complete = true;
+			headerBuilder.putHeader("Connection", "Keep-Alive");
+			headerBuilder.putHeader("Keep-Alive", "timeout=30, max=100");
 			headerBuilder.putHeader("Content-Type", mimeString);
 			headerBuilder.putHeader("Last-Modified", FormatUtils.getLastModifiedAsHTTPString(modified != null ? modified : System.currentTimeMillis()));
 			if (encoding != CompressionEncoding.NONE) {
@@ -65,7 +69,7 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 				sendResponseHeaders(responseCode, respBytes.length);
 				outputStream.write(respBytes);
 				outputStream.write("\r\n\r\n".getBytes());
-				safeCloseStream(outputStream);
+				safeFlushStream(outputStream);
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
@@ -93,6 +97,14 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 		}
 		try {
 			os.close();
+		} catch (Exception e) {
+			//ignore
+		}
+	}
+	
+	private static void safeFlushStream(OutputStream os) {
+		try {
+			os.flush();
 		} catch (Exception e) {
 			//ignore
 		}

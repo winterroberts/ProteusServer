@@ -1,7 +1,9 @@
-package net.aionstudios.proteus.api.request;
+package net.winrob.proteus.api.request;
 
 import java.io.IOException;
 import java.io.InputStream;
+
+import net.winrob.proteus.api.request.MultipartFileStream;
 
 public class MultipartFileStreamImpl extends InputStream implements MultipartFileStream {
 	

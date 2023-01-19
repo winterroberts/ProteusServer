@@ -1,4 +1,4 @@
-package net.aionstudios.proteus.api.request;
+package net.winrob.proteus.api.request;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -6,13 +6,16 @@ import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 
-import net.aionstudios.proteus.api.context.ProteusHttpContext;
-import net.aionstudios.proteus.header.ProteusHttpHeaders;
-import net.aionstudios.proteus.routing.CompositeRouter;
-import net.aionstudios.proteus.routing.Hostname;
-import net.aionstudios.proteus.routing.HttpRoute;
-import net.aionstudios.proteus.routing.PathComprehension;
-import net.aionstudios.proteus.util.RequestUtils;
+import net.winrob.proteus.api.context.ProteusHttpContext;
+import net.winrob.proteus.api.request.ParameterMap;
+import net.winrob.proteus.api.request.ProteusHttpRequest;
+import net.winrob.proteus.api.request.RequestBody;
+import net.winrob.proteus.header.ProteusHttpHeaders;
+import net.winrob.proteus.routing.CompositeRouter;
+import net.winrob.proteus.routing.Hostname;
+import net.winrob.proteus.routing.HttpRoute;
+import net.winrob.proteus.routing.PathComprehension;
+import net.winrob.proteus.util.RequestUtils;
 
 public class ProteusHttpRequestImpl implements ProteusHttpRequest {
 	

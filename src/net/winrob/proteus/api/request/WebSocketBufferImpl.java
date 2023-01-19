@@ -1,9 +1,11 @@
-package net.aionstudios.proteus.api.request;
+package net.winrob.proteus.api.request;
 
 import java.nio.ByteBuffer;
 
-import net.aionstudios.proteus.api.websocket.DataType;
-import net.aionstudios.proteus.util.StreamUtils;
+import net.winrob.proteus.api.request.ProteusWebSocketConnection;
+import net.winrob.proteus.api.request.WebSocketBuffer;
+import net.winrob.proteus.api.websocket.DataType;
+import net.winrob.proteus.util.StreamUtils;
 
 /**
  * Buffers web socket data from one start (and finish) frame which may consist of 0 or more continuation frames.
