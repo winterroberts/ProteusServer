@@ -1,6 +1,8 @@
 package net.winrob.proteus;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +26,7 @@ import net.winrob.aionlog.SubConsolePrefix;
 import net.winrob.proteus.api.ProteusAPI;
 import net.winrob.proteus.api.ProteusApp;
 import net.winrob.proteus.api.context.ProteusHttpContext;
+import net.winrob.proteus.api.fileio.MimeType;
 import net.winrob.proteus.api.request.ProteusHttpRequest;
 import net.winrob.proteus.api.response.ProteusHttpResponse;
 import net.winrob.proteus.configuration.EndpointConfiguration;
@@ -79,14 +82,19 @@ public class Proteus {
 		@Override
 		public Set<CompositeRouter> build() {
 			Hostname host = new Hostname("localhost");
-			EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 443);
+			EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
 			ec.getContextController().addHttpContext(new ProteusHttpContext() {
 				
 				@Override
 				public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
 					if (request.getPathComprehension().getPathParameters().hasParameter("name")) {
-						String decodedString = URLDecoder.decode(request.getPathComprehension().getPathParameters().getParameter("name"), StandardCharsets.UTF_8);
-						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 " + decodedString + "</h1></body></html>");
+						try {
+							response.setMimeString(MimeType.getInstance().getMimeString("jpg"));
+							response.sendResponse(new FileInputStream(new File("C:/Users/wrpar/Downloads/water_square_deep.jpg")));
+						} catch (FileNotFoundException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
 					} else {
 						response.sendResponse("<html><body><h1>Proteus HTTP v1.0.0 special</h1></body></html>");
 					}
@@ -105,7 +113,7 @@ public class Proteus {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			return Set.of(rb.build(ec).toComposite(sslFactory));
+			return Set.of(rb.build(ec).toComposite());
 		}
 		
 	}

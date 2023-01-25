@@ -238,7 +238,10 @@ public class ProteusServer {
 			@Override
 			protected boolean run() {
 				try {
-					if (!client.isClosed()) clientHandler(client, router);
+					if (!client.isClosed()) {
+						client.setSoTimeout(30000);
+						clientHandler(client, router);
+					}
 				} catch(SSLProtocolException e) {
 					
 				} catch(SSLHandshakeException e) {
@@ -290,25 +293,26 @@ public class ProteusServer {
 	    				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
 	    					CompressionEncoding.NONE;
 	        	ProteusHttpRequestImpl request = new ProteusHttpRequestImpl(client, method, version, path, headers, router);
+	        	boolean keepAlive = headers.hasHeader("Connection") ? headers.getHeader("Connection").getFirst().getValue().equalsIgnoreCase("keep-alive") : false;
+	        	System.out.println(keepAlive);
 	        	if (request.routed()) {
 	        		new HttpContextRoutedEvent() {
 
 						@Override
 						protected boolean run() {
 							try {
-								client.setSoTimeout(30000);
 								switch(method) {
 					        	case "GET":
-					        		respondWithContext(request, client.getOutputStream(), ce);
+					        		respondWithContext(request, keepAlive, client.getOutputStream(), ce);
 					        		break;
 					        	case "POST":
-					        		respondWithContext(request, client.getOutputStream(), ce);
+					        		respondWithContext(request, keepAlive, client.getOutputStream(), ce);
 					        		break;
 					        	default:
 					        		ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.METHOD_NOT_ALLOWED, client);
 					        		return false;
 					        	}
-								if (headers.hasHeader("Connection") && headers.getHeader("Connection").getFirst().getValue().equalsIgnoreCase("keep-alive")) keepAlive(client, router);
+								if (keepAlive) keepAlive(client, router);
 								else client.close();
 								return true;
 							} catch (IOException e) {
@@ -344,8 +348,8 @@ public class ProteusServer {
 	 * @param outputStream The output stream which the response will be written to.
 	 * @param encoding The compression which will be used (as stipulated by mutual server-client support for it).
 	 */
-	private void respondWithContext(ProteusHttpRequest request, OutputStream outputStream, CompressionEncoding encoding) {
-		ProteusHttpResponse response = new ProteusHttpResponseImpl(outputStream, encoding);
+	private void respondWithContext(ProteusHttpRequest request, boolean keepAlive, OutputStream outputStream, CompressionEncoding encoding) {
+		ProteusHttpResponse response = new ProteusHttpResponseImpl(this, keepAlive, outputStream, encoding);
 		request.getContext().handle(request, response);
 	}
 	

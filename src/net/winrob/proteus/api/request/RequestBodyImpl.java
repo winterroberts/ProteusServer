@@ -91,7 +91,7 @@ public class RequestBodyImpl implements RequestBody {
 						for (int i = contentEncoding.size() - 1; i >= 0; i--) {
 							HeaderValue hv = contentEncoding.get(i);
 							List<QualityValue> qv = hv.getValues();
-							for (int j = qv.size()-1; i >= 0; i--) {
+							for (int j = qv.size()-1; j >= 0; j--) {
 								CompressionEncoding ce = CompressionEncoding.forName(qv.get(j).getValue());
 								if (ce != CompressionEncoding.NONE) {
 									if (!decompressOrder.contains(ce)) {
