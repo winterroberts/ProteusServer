@@ -23,6 +23,7 @@ import net.winrob.aionlog.AnsiOut;
 import net.winrob.aionlog.Logger;
 import net.winrob.aionlog.StandardOverride;
 import net.winrob.aionlog.SubConsolePrefix;
+import net.winrob.commons.pythia.ConsoleCommandLine;
 import net.winrob.proteus.api.ProteusAPI;
 import net.winrob.proteus.api.ProteusApp;
 import net.winrob.proteus.api.context.ProteusHttpContext;
@@ -31,6 +32,7 @@ import net.winrob.proteus.api.request.ProteusHttpRequest;
 import net.winrob.proteus.api.response.ProteusHttpResponse;
 import net.winrob.proteus.configuration.EndpointConfiguration;
 import net.winrob.proteus.configuration.EndpointType;
+import net.winrob.proteus.publish.PublishContext;
 import net.winrob.proteus.routing.CompositeRouter;
 import net.winrob.proteus.routing.Hostname;
 import net.winrob.proteus.routing.PathInterpreter;
@@ -66,6 +68,9 @@ public class Proteus {
 		StandardOverride.enableOverride();
 		
 		servers = new HashMap<>();
+		ConsoleCommandLine cli = ConsoleCommandLine.getInstance();
+		//cli.addCommand("stop", null);
+		cli.startConsoleThread();
 		init = true;
 	}
 	
@@ -89,8 +94,8 @@ public class Proteus {
 				public void handle(ProteusHttpRequest request, ProteusHttpResponse response) {
 					if (request.getPathComprehension().getPathParameters().hasParameter("name")) {
 						try {
-							response.setMimeString(MimeType.getInstance().getMimeString("jpg"));
-							response.sendResponse(new FileInputStream(new File("C:/Users/wrpar/Downloads/water_square_deep.jpg")));
+							response.setMimeString(MimeType.getInstance().getMimeString("png"));
+							response.sendResponse(new FileInputStream(new File("C:/Users/wrpar/Downloads/z.png")));
 						} catch (FileNotFoundException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
@@ -101,6 +106,9 @@ public class Proteus {
 				}
 				
 			}, new PathInterpreter("/a/:name"), new PathInterpreter("/a"));
+			
+			ec.getContextController().addHttpContext(new PublishContext("C:/Users/wrpar/Desktop/sandbox/didmattshave"),
+					new PathInterpreter("/b", true));
 			RouterBuilder rb = new RouterBuilder();
 			rb.addHostname(host);
 			

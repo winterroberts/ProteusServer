@@ -5,9 +5,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import net.winrob.proteus.ProteusServer;
-import net.winrob.proteus.api.event.SendResponseHeadersEvent;
+import net.winrob.proteus.api.event.http.ClientKeepAliveEvent;
+import net.winrob.proteus.api.event.http.SendResponseHeadersEvent;
 import net.winrob.proteus.compression.CompressionEncoding;
 import net.winrob.proteus.compression.Compressor;
+import net.winrob.proteus.error.ErrorResponse;
 import net.winrob.proteus.header.ProteusHeaderBuilder;
 import net.winrob.proteus.util.FormatUtils;
 
@@ -27,7 +29,7 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 	// TODO range request (which will be in an implementer...) but file support may also be native for pass-through.
 	private boolean complete = false;
 	
-	private boolean keepAlive;
+	private ClientKeepAliveEvent keepAlive;
 	
 	/**
 	 * Creates a new ProteusHttpResponse with the given encoding and output stream (from client socket).
@@ -35,7 +37,7 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 	 * @param outputStream The output stream to be used when writing the response.
 	 * @param encoding The {@link CompressionEncoding} to be used when writing the response.
 	 */
-	public ProteusHttpResponseImpl(ProteusServer server, boolean keepAlive, OutputStream outputStream, CompressionEncoding encoding) {
+	public ProteusHttpResponseImpl(ProteusServer server, ClientKeepAliveEvent keepAlive, OutputStream outputStream, CompressionEncoding encoding) {
 		this.outputStream = outputStream;
 		this.encoding = encoding;
 		this.mimeString = "text/html";
@@ -71,16 +73,21 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 
 	@Override
 	public void sendResponse(ResponseCode responseCode, InputStream response) {
+		sendResponse(responseCode, response, false);
+	}
+	
+	@Override
+	public void sendResponse(ResponseCode responseCode, InputStream response, boolean ignoreCompressionDirective) {
 		if (!complete) {
 			complete = true;
 			headerBuilder.putHeader("Server", "Proteus");
-			if (keepAlive) {
+			if (keepAlive != null) {
 				headerBuilder.putHeader("Connection", "Keep-Alive");
 				headerBuilder.putHeader("Keep-Alive", "timeout=30, max=100");
 			}
 			headerBuilder.putHeader("Content-Type", mimeString);
 			headerBuilder.putHeader("Last-Modified", FormatUtils.getLastModifiedAsHTTPString(modified != null ? modified : System.currentTimeMillis()));
-			new SendResponseHeadersImpl(headerBuilder, responseCode, encoding, response).dispatchImmediately(server.getEventDispatcher());
+			new SendResponseHeadersImpl(headerBuilder, responseCode, ignoreCompressionDirective ? CompressionEncoding.NONE : encoding, response).dispatch(server.getEventDispatcher());
 		}
 	}
 	
@@ -147,6 +154,12 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 		}
 	}
 	
+	private boolean sent;
+	
+	public boolean isCompleted() {
+		return sent;
+	}
+	
 	public class SendResponseHeadersImpl extends SendResponseHeadersEvent {
 		
 		private InputStream in;
@@ -175,15 +188,17 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 		@Override
 		protected boolean run() {
 			try {
+				sent = true;
 				byte[] compressed = Compressor.compress(in, ce);
 				InputStream s = new ByteArrayInputStream(compressed);
 				byte[] bytes = s.readNBytes(65536);
 				if (bytes.length < 65536) {
-					sendResponseHeaders(rc, ce, bytes.length);
+					sendResponseHeaders(rc, encoding != ce ? encoding : ce, bytes.length);
 					outputStream.write(bytes);
+					if (keepAlive != null) keepAlive.dispatch(server.getEventDispatcher());
 					return true;
 				} else if (bytes.length > 0) {
-					sendChunkedResponseHeaders(rc, ce);
+					sendChunkedResponseHeaders(rc, encoding != ce ? encoding : ce);
 					do {
 						outputStream.write((Integer.toHexString(bytes.length) + "\r\n").getBytes());
 						outputStream.write(bytes);
@@ -191,6 +206,7 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 					} while ((bytes = s.readNBytes(65536)).length > 0);
 					outputStream.write("0\r\n".getBytes());
 					outputStream.write("\r\n".getBytes());
+					if (keepAlive != null) keepAlive.dispatch(server.getEventDispatcher());
 					return true;
 				}
 			} catch (IOException e) {
@@ -199,6 +215,26 @@ public class ProteusHttpResponseImpl implements ProteusHttpResponse {
 			return false;
 		}
 		
+	}
+
+	@Override
+	public void error(ResponseCode code) {
+		ErrorResponse.sendErrorResponse(server.getEventDispatcher(), code, outputStream, true);
+	}
+
+	@Override
+	public ProteusHeaderBuilder getHeaderBuilder() {
+		return headerBuilder;
+	}
+
+	@Override
+	public void error(ResponseCode code, String message) {
+		ErrorResponse.sendErrorResponse(server.getEventDispatcher(), code, outputStream, message, true);
+	}
+
+	@Override
+	public void error(ResponseCode code, byte[] message) {
+		ErrorResponse.sendErrorResponse(server.getEventDispatcher(), code, outputStream, message, true);
 	}
 
 }

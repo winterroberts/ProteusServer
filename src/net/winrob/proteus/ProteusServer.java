@@ -15,12 +15,12 @@ import net.winrob.commons.saon.EventDispatcher;
 import net.winrob.proteus.api.ProteusApp;
 import net.winrob.proteus.api.context.ProteusHttpContext;
 import net.winrob.proteus.api.context.ProteusWebSocketContext;
-import net.winrob.proteus.api.event.ClientAcceptEvent;
-import net.winrob.proteus.api.event.ClientKeepAliveEvent;
-import net.winrob.proteus.api.event.HttpContextRoutedEvent;
-import net.winrob.proteus.api.event.ListenerThreadSpawnedEvent;
-import net.winrob.proteus.api.event.RequestReceivedEvent;
-import net.winrob.proteus.api.event.WebSocketContextRoutedEvent;
+import net.winrob.proteus.api.event.http.ClientKeepAliveEvent;
+import net.winrob.proteus.api.event.http.HttpContextRoutedEvent;
+import net.winrob.proteus.api.event.server.ClientAcceptEvent;
+import net.winrob.proteus.api.event.server.ListenerThreadSpawnedEvent;
+import net.winrob.proteus.api.event.server.RequestReceivedEvent;
+import net.winrob.proteus.api.event.websocket.WebSocketContextRoutedEvent;
 import net.winrob.proteus.api.request.ProteusHttpRequest;
 import net.winrob.proteus.api.request.ProteusHttpRequestImpl;
 import net.winrob.proteus.api.request.ProteusWebSocketConnection;
@@ -87,49 +87,21 @@ public class ProteusServer {
 			running = true;
 			stopped = false;
 			for (CompositeRouter router : routers) {
-				listenThread = new Thread(new Runnable() {
+				listenThread = new Thread(() -> {
 	
-					@Override
-					public void run() {
-						try {
-							ServerSocket server = router.createSocket();
-							new ListenerThreadSpawnedEvent(server, router).dispatchImmediately(dispatcher);
-							while (running) {
-								Socket client = server.accept();
-								new ClientAcceptEvent() {
-
-									@Override
-									public Socket getClientSocket() {
-										return client;
-									}
-
-									@Override
-									public CompositeRouter getRouter() {
-										return router;
-									}
-
-									@Override
-									protected boolean run() {
-										try {
-											clientHandler(client, router);
-										} catch(SSLProtocolException e) {
-											
-										} catch(SSLHandshakeException e) {
-											
-										} catch (IOException e) {
-											e.printStackTrace();
-										}
-										return true;
-									}
-									
-								}.dispatch(dispatcher);
-							}
-						} catch (IOException e) {
-							e.printStackTrace();
+					try {
+						ServerSocket server = router.createSocket();
+						new ListenerThreadSpawnedEvent(server, router).dispatchImmediately(dispatcher);
+						while (running) {
+							Socket client = server.accept();
+							new ClientAcceptEventImpl(client, router).dispatch(dispatcher);
 						}
+					} catch (IOException e) {
+						e.printStackTrace();
 					}
 						
 				});
+				listenThread.setName(appName + "-Listener");
 				listenThread.start();
 				System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode" + (router.isSecure() ? " (secure)" : "") + ".");
 			}
@@ -152,9 +124,8 @@ public class ProteusServer {
 		
 		StringBuilder requestBuilder = new StringBuilder();
         String line;
-	    if ((line = StreamUtils.readLine(inputStream, true)).length() < 4) {
-	    	if (!client.isInputShutdown()) keepAlive(client, router);
-	    	return;
+	    while ((line = StreamUtils.readLine(inputStream, true)).length() < 4) {
+	    	if (client.isInputShutdown()) return;
 	    }
         do {
         	requestBuilder.append(line + "\r\n");
@@ -181,83 +152,10 @@ public class ProteusServer {
         	}
         }
         ProteusHttpHeaders headers = headerBuilder.toHeaders();
-        new RequestReceivedEvent() {
-
-			@Override
-			public ProteusHttpHeaders getHeaders() {
-				return headers;
-			}
-
-			@Override
-			public String getMethod() {
-				return method;
-			}
-
-			@Override
-			public String getPath() {
-				return path;
-			}
-
-			@Override
-			public String getVersion() {
-				return version;
-			}
-
-			@Override
-			public boolean isSecure() {
-				return router.isSecure();
-			}
-
-			@Override
-			public boolean isWebSocket() {
-				return headers.hasHeader("Sec-WebSocket-Key");
-			}
-
-			@Override
-			protected boolean run() {
-				routeRequest(this, client, router);
-				return true;
-			}
-        	
-        }.dispatch(dispatcher);
+        new RequestReceivedEventImpl(client, router, headers, method, path, version).dispatch(dispatcher);
 	}
 	
-	private void keepAlive(Socket client, CompositeRouter router) {
-		new ClientKeepAliveEvent() {
-
-			@Override
-			public Socket getClientSocket() {
-				return client;
-			}
-
-			@Override
-			public CompositeRouter getRouter() {
-				return router;
-			}
-
-			@Override
-			protected boolean run() {
-				try {
-					if (!client.isClosed()) {
-						client.setSoTimeout(30000);
-						clientHandler(client, router);
-					}
-				} catch(SSLProtocolException e) {
-					
-				} catch(SSLHandshakeException e) {
-					
-				} catch(SocketTimeoutException e) {
-					
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-				return true;
-			}
-			
-		}.dispatch(dispatcher);
-	}
-	
-	private void routeRequest(RequestReceivedEvent event, Socket client, CompositeRouter router) {
+	private void routeRequest(RequestReceivedEvent event, Socket client, CompositeRouter router) throws IOException {
 		String method = event.getMethod();
 		String path = event.getPath();
 		String version = event.getVersion();
@@ -266,78 +164,26 @@ public class ProteusServer {
         	if (method.equals("GET") && event.isWebSocket()) {
         		ProteusWebSocketRequestImpl request = new ProteusWebSocketRequestImpl(client, path, headers, router);
         		if (request.routed()) {
-        			new WebSocketContextRoutedEvent() {
-
-						@Override
-						public ProteusWebSocketContext getContext() {
-							return request.getContext();
-						}
-
-						@Override
-						public WebSocketRoute getRoute() {
-							return request.getRoute();
-						}
-
-						@Override
-						protected boolean run() {
-							startWebSocketConnection(client, request);
-							return true;
-						}
-        				
-        			}.dispatch(dispatcher);
+        			new WebSocketContextRoutedEventImpl(client, request).dispatch(dispatcher);
         		} else {
-        			ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.NOT_FOUND, client);
+        			ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.NOT_FOUND, client.getOutputStream());
 	        	}
         	} else {
 	        	CompressionEncoding ce = headers.hasHeader("Accept-Encoding") ? 
 	    				CompressionEncoding.forAcceptHeader(headers.getHeader("Accept-Encoding").getFirst().getValue()) : 
 	    					CompressionEncoding.NONE;
-	        	ProteusHttpRequestImpl request = new ProteusHttpRequestImpl(client, method, version, path, headers, router);
-	        	boolean keepAlive = headers.hasHeader("Connection") ? headers.getHeader("Connection").getFirst().getValue().equalsIgnoreCase("keep-alive") : false;
-	        	System.out.println(keepAlive);
+	        	ProteusHttpRequestImpl request = new ProteusHttpRequestImpl(client, method, version, path, headers, router, dispatcher);
+	        	ClientKeepAliveEvent keepAlive = headers.hasHeader("Connection")
+	        			&& headers.getHeader("Connection").getFirst().getValue().equalsIgnoreCase("keep-alive")
+	        			? new ClientKeepAliveEventImpl(client, router) : null;
 	        	if (request.routed()) {
-	        		new HttpContextRoutedEvent() {
-
-						@Override
-						protected boolean run() {
-							try {
-								switch(method) {
-					        	case "GET":
-					        		respondWithContext(request, keepAlive, client.getOutputStream(), ce);
-					        		break;
-					        	case "POST":
-					        		respondWithContext(request, keepAlive, client.getOutputStream(), ce);
-					        		break;
-					        	default:
-					        		ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.METHOD_NOT_ALLOWED, client);
-					        		return false;
-					        	}
-								if (keepAlive) keepAlive(client, router);
-								else client.close();
-								return true;
-							} catch (IOException e) {
-								e.printStackTrace();
-								return false;
-							}
-						}
-
-						@Override
-						public ProteusHttpContext getContext() {
-							return request.getContext();
-						}
-
-						@Override
-						public HttpRoute getRoute() {
-							return request.getRoute();
-						}
-	        			
-	        		}.dispatch(dispatcher);
+	        		new HttpContextRoutedEventImpl(client, request, keepAlive, ce, method).dispatch(dispatcher);
 	        	} else {
-	        		ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.NOT_FOUND, client);
+	        		ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.NOT_FOUND, client.getOutputStream());
 	        	}
         	}
         } else {
-        	ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.HTTP_VERSION_NOT_SUPPORTED, client);
+        	ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.HTTP_VERSION_NOT_SUPPORTED, client.getOutputStream());
         }
 	}
 	
@@ -348,8 +194,8 @@ public class ProteusServer {
 	 * @param outputStream The output stream which the response will be written to.
 	 * @param encoding The compression which will be used (as stipulated by mutual server-client support for it).
 	 */
-	private void respondWithContext(ProteusHttpRequest request, boolean keepAlive, OutputStream outputStream, CompressionEncoding encoding) {
-		ProteusHttpResponse response = new ProteusHttpResponseImpl(this, keepAlive, outputStream, encoding);
+	private void respondWithContext(ProteusHttpRequest request, ClientKeepAliveEvent keepAlive, OutputStream outputStream, CompressionEncoding encoding) {
+		ProteusHttpResponseImpl response = new ProteusHttpResponseImpl(this, keepAlive, outputStream, encoding);
 		request.getContext().handle(request, response);
 	}
 	
@@ -403,6 +249,224 @@ public class ProteusServer {
 	 */
 	public Set<CompositeRouter> getRouters() {
 		return routers;
+	}
+	
+	
+	/*
+	 * Events
+	 */
+	
+	private void startHandlerThread(Socket client, CompositeRouter router) {
+		Thread handler = new Thread(() -> {
+			try {
+				if (!client.isClosed()) {
+					client.setSoTimeout(30000);
+					clientHandler(client, router);
+				}
+			} catch(SSLProtocolException e) {
+				
+			} catch(SSLHandshakeException e) {
+				
+			} catch(SocketTimeoutException e) {
+				
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		});
+		handler.setName(appName + "-ClientHandler");
+		handler.start();
+	}
+	
+	private class ClientAcceptEventImpl extends ClientAcceptEvent {
+		
+		private final Socket client;
+		private final CompositeRouter router;
+		
+		public ClientAcceptEventImpl(Socket client, CompositeRouter router) {
+			this.client = client;
+			this.router = router;
+		}
+
+		@Override
+		public Socket getClientSocket() {
+			return client;
+		}
+
+		@Override
+		public CompositeRouter getRouter() {
+			return router;
+		}
+
+		@Override
+		protected boolean run() {
+			startHandlerThread(client, router);
+			return true;
+		}
+		
+	}
+	
+	private class RequestReceivedEventImpl extends RequestReceivedEvent {
+		
+		private final Socket client;
+		private final CompositeRouter router;
+		private final ProteusHttpHeaders headers;
+		private final String method;
+		private final String path;
+		private final String version;
+		
+		public RequestReceivedEventImpl(Socket client, CompositeRouter router, ProteusHttpHeaders headers, String method, String path, String version) {
+			this.client = client;
+			this.router = router;
+			this.headers = headers;
+			this.method = method;
+			this.path = path;
+			this.version = version;
+		}
+
+		@Override
+		public ProteusHttpHeaders getHeaders() {
+			return headers;
+		}
+
+		@Override
+		public String getMethod() {
+			return method;
+		}
+
+		@Override
+		public String getPath() {
+			return path;
+		}
+
+		@Override
+		public String getVersion() {
+			return version;
+		}
+
+		@Override
+		public boolean isSecure() {
+			return router.isSecure();
+		}
+
+		@Override
+		public boolean isWebSocket() {
+			return headers.hasHeader("Sec-WebSocket-Key");
+		}
+
+		@Override
+		protected boolean run() {
+			try {
+				routeRequest(this, client, router);
+			} catch (IOException e) {
+				e.printStackTrace();
+				return false;
+			}
+			return true;
+		}
+    	
+    }
+	
+	private class WebSocketContextRoutedEventImpl extends WebSocketContextRoutedEvent {
+
+		private final Socket client;
+		private final ProteusWebSocketRequestImpl request;
+		
+		public WebSocketContextRoutedEventImpl(Socket client, ProteusWebSocketRequestImpl request) {
+			this.client = client;
+			this.request = request;
+		}
+		
+		@Override
+		public ProteusWebSocketContext getContext() {
+			return request.getContext();
+		}
+
+		@Override
+		public WebSocketRoute getRoute() {
+			return request.getRoute();
+		}
+
+		@Override
+		protected boolean run() {
+			startWebSocketConnection(client, request);
+			return true;
+		}
+		
+	}
+	
+	private class HttpContextRoutedEventImpl extends HttpContextRoutedEvent {
+		
+		private final Socket client;
+		private final ProteusHttpRequestImpl request;
+		private final ClientKeepAliveEvent keepAlive;
+		private final CompressionEncoding compression;
+		private final String method;
+		
+		public HttpContextRoutedEventImpl(Socket client, ProteusHttpRequestImpl request, ClientKeepAliveEvent keepAlive, CompressionEncoding compression, String method) {
+			this.client = client;
+			this.request = request;
+			this.compression = compression;
+			this.method = method;
+			this.keepAlive = keepAlive;
+		}
+
+		@Override
+		protected boolean run() {
+			try {
+				switch(method) {
+	        	case "GET":
+	        	case "POST":
+	        		respondWithContext(request, keepAlive, client.getOutputStream(), compression);
+	        		break;
+	        	default:
+	        		ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.METHOD_NOT_ALLOWED, client.getOutputStream());
+	        		return false;
+	        	}
+				return true;
+			} catch (IOException e) {
+				e.printStackTrace();
+				return false;
+			}
+		}
+
+		@Override
+		public ProteusHttpContext getContext() {
+			return request.getContext();
+		}
+
+		@Override
+		public HttpRoute getRoute() {
+			return request.getRoute();
+		}
+		
+	}
+	
+	private class ClientKeepAliveEventImpl extends ClientKeepAliveEvent {
+		
+		private final Socket client;
+		private final CompositeRouter router;
+		
+		public ClientKeepAliveEventImpl(Socket client, CompositeRouter router) {
+			this.client = client;
+			this.router = router;
+		}
+
+		@Override
+		public Socket getClientSocket() {
+			return client;
+		}
+
+		@Override
+		public CompositeRouter getRouter() {
+			return router;
+		}
+
+		@Override
+		protected boolean run() {
+			startHandlerThread(client, router);
+			return true;
+		}
+		
 	}
 	
 }

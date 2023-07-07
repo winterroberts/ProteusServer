@@ -14,16 +14,11 @@ import java.util.TimerTask;
 import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.LinkedBlockingDeque;
 
-import net.winrob.proteus.api.request.ProteusWebSocketConnection;
-import net.winrob.proteus.api.request.ProteusWebSocketConnectionManager;
-import net.winrob.proteus.api.request.ProteusWebSocketRequest;
-import net.winrob.proteus.api.request.WebSocketBuffer;
 import net.winrob.proteus.api.websocket.ClosingCode;
 import net.winrob.proteus.api.websocket.DataType;
 import net.winrob.proteus.api.websocket.OpCode;
 import net.winrob.proteus.api.websocket.WebSocketFrame;
 import net.winrob.proteus.api.websocket.WebSocketState;
-import net.winrob.proteus.api.websocket.WebSocketFrame.Callback;
 import net.winrob.proteus.header.ProteusHeaderBuilder;
 import net.winrob.proteus.util.SecurityUtils;
 import net.winrob.proteus.util.StreamUtils;
@@ -80,18 +75,15 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	        outputStream.flush();
 	        heartbeat = System.currentTimeMillis();
 			state = WebSocketState.OPEN;
-			Thread reply = new Thread(new Runnable() {
+			Thread reply = new Thread(() -> {
 
-				@Override
-				public void run() {
-					try {
-						writeLoop();
-						client.close();
-					} catch (IOException e) {
-						e.printStackTrace();
-					} catch (InterruptedException e) {
-						e.printStackTrace();
-					}
+				try {
+					writeLoop();
+					client.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				} catch (InterruptedException e) {
+					e.printStackTrace();
 				}
 				
 			});
@@ -119,7 +111,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 				} else if (diff > 20000 && !heartbeatWaiting) {
 					lastPing = SecurityUtils.genToken(16);
 					heartbeatWaiting = true;
-					replyQueue.offerFirst(WebSocketFrame.pingFrame(lastPing, Callback.NULL));
+					replyQueue.offerFirst(WebSocketFrame.pingFrame(lastPing, null));
 				}
 			}
 		}
@@ -201,15 +193,12 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 			if (state == WebSocketState.CLOSING) {
 				connection.closeInternal(false);
 			} else {
-				close(ClosingCode.NORMAL, "", new Callback() {
+				close(ClosingCode.NORMAL, "", () -> {
 	
-					@Override
-					public void call() {
-						try {
-							connection.closeInternal(false);
-						} catch (IOException e) {
-							e.printStackTrace();
-						}
+					try {
+						connection.closeInternal(false);
+					} catch (IOException e) {
+						e.printStackTrace();
 					}
 					
 				});
@@ -220,14 +209,9 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 				close(ClosingCode.PROTOCOL_ERROR, "Control frame size (125) exceeded in ping!");
 				return false;
 			} else {
-				replyQueue.add(WebSocketFrame.pongFrame(new String(readFrame(read), StandardCharsets.UTF_8), new Callback() {
-
-					@Override
-					public void call() {
-						heartbeatWaiting = false;
-						heartbeat = System.currentTimeMillis();
-					}
-					
+				replyQueue.add(WebSocketFrame.pongFrame(new String(readFrame(read), StandardCharsets.UTF_8), () -> {
+					heartbeatWaiting = false;
+					heartbeat = System.currentTimeMillis();
 				}));
 			}
 			break;
@@ -286,24 +270,19 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 	public void close(ClosingCode code, String reason) {
 		if (state == WebSocketState.OPEN) {
 			ProteusWebSocketConnectionImpl connection = this;
-			close(code, reason, new Callback() {
-
-				@Override
-				public void call() {
+			close(code, reason, () -> {
 					new Timer().schedule(new TimerTask() {
 
-						@Override
-						public void run() {
-							try {
-								connection.closeInternal(true);
-							} catch (IOException e) {
-								e.printStackTrace();
-							}
+					@Override
+					public void run() {
+						try {
+							connection.closeInternal(true);
+						} catch (IOException e) {
+							e.printStackTrace();
 						}
+					}
 						
-					}, 20000);
-				}
-				
+				}, 20000);
 			});
 		}
 	}
@@ -324,7 +303,7 @@ public class ProteusWebSocketConnectionImpl implements ProteusWebSocketConnectio
 		}
 	}
 	
-	private void close(ClosingCode code, String reason, Callback callback) {
+	private void close(ClosingCode code, String reason, Runnable callback) {
 		state = WebSocketState.CLOSING;
 		replyQueue.offer(WebSocketFrame.closingFrame(code, reason, callback));
 	}

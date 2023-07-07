@@ -6,6 +6,7 @@ import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
 
+import net.winrob.commons.saon.EventDispatcher;
 import net.winrob.proteus.api.context.ProteusHttpContext;
 import net.winrob.proteus.api.request.ParameterMap;
 import net.winrob.proteus.api.request.ProteusHttpRequest;
@@ -25,6 +26,7 @@ public class ProteusHttpRequestImpl implements ProteusHttpRequest {
 	
 	private String method;
 	private String httpVersion;
+	private String path;
 	private Hostname hostname;
 	
 	private ProteusHttpHeaders headers;
@@ -34,6 +36,8 @@ public class ProteusHttpRequestImpl implements ProteusHttpRequest {
 	private ParameterMap<String> cookies; // TODO Flesh out cookies!
 	
 	private HttpRoute route;
+	
+	private EventDispatcher dispatcher;
 	
 	/**
 	 * Constructs a new ProteusHttpRequest object.
@@ -45,7 +49,7 @@ public class ProteusHttpRequestImpl implements ProteusHttpRequest {
 	 * @param headers The {@link ProteusHttpHeaders} of this request.
 	 * @param router The {@link CompositeRouter} used by the endpoint to resolve the path request.
 	 */
-	public ProteusHttpRequestImpl(Socket client, String method, String httpVersion, String path, ProteusHttpHeaders headers, CompositeRouter router) {
+	public ProteusHttpRequestImpl(Socket client, String method, String httpVersion, String path, ProteusHttpHeaders headers, CompositeRouter router, EventDispatcher dispatcher) {
 		try {
 			this.inputStream = client.getInputStream();
 		} catch (IOException e) {
@@ -54,6 +58,7 @@ public class ProteusHttpRequestImpl implements ProteusHttpRequest {
 		this.remoteAddress = client.getInetAddress().toString();
 		this.method = method;
 		this.httpVersion = httpVersion;
+		this.path = path;
 		this.hostname = new Hostname(headers.getHeader("Host").getFirst().getValue());
 		this.headers = headers;
 		route = router.getHttpRoute(hostname, resolveURI(path));
@@ -67,6 +72,7 @@ public class ProteusHttpRequestImpl implements ProteusHttpRequest {
 				System.out.println(s + ": " + post.getParameter(s));
 			}
 		}
+		this.dispatcher = dispatcher;
 	}
 	
 	// Decomposes the path and query string components of the URI.
@@ -144,6 +150,16 @@ public class ProteusHttpRequestImpl implements ProteusHttpRequest {
 	@Override
 	public boolean routed() {
 		return route != null;
+	}
+
+	@Override
+	public EventDispatcher getEventDispatcher() {
+		return dispatcher;
+	}
+
+	@Override
+	public String getPath() {
+		return path;
 	}
 	
 }
