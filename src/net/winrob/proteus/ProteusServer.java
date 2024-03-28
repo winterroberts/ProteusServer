@@ -177,7 +177,7 @@ public class ProteusServer {
 	        			&& headers.getHeader("Connection").getFirst().getValue().equalsIgnoreCase("keep-alive")
 	        			? new ClientKeepAliveEventImpl(client, router) : null;
 	        	if (request.routed()) {
-	        		new HttpContextRoutedEventImpl(client, request, keepAlive, ce, method).dispatch(dispatcher);
+	        		new HttpContextRoutedEventImpl(this, client, request, keepAlive, ce, method).dispatch(dispatcher);
 	        	} else {
 	        		ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.NOT_FOUND, client.getOutputStream());
 	        	}
@@ -185,33 +185,6 @@ public class ProteusServer {
         } else {
         	ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.HTTP_VERSION_NOT_SUPPORTED, client.getOutputStream());
         }
-	}
-	
-	/**
-	 * Directs a compiled request which matched a context on the endpoint to be handled by the context.
-	 * 
-	 * @param request The request which is being processed, including the context it matched.
-	 * @param outputStream The output stream which the response will be written to.
-	 * @param encoding The compression which will be used (as stipulated by mutual server-client support for it).
-	 */
-	private void respondWithContext(ProteusHttpRequest request, ClientKeepAliveEvent keepAlive, OutputStream outputStream, CompressionEncoding encoding) {
-		ProteusHttpResponseImpl response = new ProteusHttpResponseImpl(this, keepAlive, outputStream, encoding);
-		request.getContext().handle(request, response);
-	}
-	
-	/**
-	 * Opens a new websocket connection on a matched context.
-	 * 
-	 * @param client The client socket which connected.
-	 * @param request The request which is being processed, including the context it matched.
-	 */
-	private void startWebSocketConnection(Socket client, ProteusWebSocketRequest request) {
-		try {
-			ProteusWebSocketConnection websocket = new ProteusWebSocketConnectionImpl(client, request);
-			ProteusWebSocketConnectionManager.getConnectionManager().startConnection(websocket);
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
 	}
 	
 	/**
@@ -371,9 +344,12 @@ public class ProteusServer {
 		private final Socket client;
 		private final ProteusWebSocketRequestImpl request;
 		
-		public WebSocketContextRoutedEventImpl(Socket client, ProteusWebSocketRequestImpl request) {
+		private final ProteusWebSocketConnection connection;
+		
+		public WebSocketContextRoutedEventImpl(Socket client, ProteusWebSocketRequestImpl request) throws IOException {
 			this.client = client;
 			this.request = request;
+			this.connection = new ProteusWebSocketConnectionImpl(client, request);
 		}
 		
 		@Override
@@ -388,8 +364,18 @@ public class ProteusServer {
 
 		@Override
 		protected boolean run() {
-			startWebSocketConnection(client, request);
+			try {
+				ProteusWebSocketConnectionManager.getConnectionManager().startConnection(connection);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 			return true;
+		}
+
+		@Override
+		public ProteusWebSocketConnection getConnection() {
+			// TODO Auto-generated method stub
+			return null;
 		}
 		
 	}
@@ -402,12 +388,15 @@ public class ProteusServer {
 		private final CompressionEncoding compression;
 		private final String method;
 		
-		public HttpContextRoutedEventImpl(Socket client, ProteusHttpRequestImpl request, ClientKeepAliveEvent keepAlive, CompressionEncoding compression, String method) {
+		private final ProteusHttpResponseImpl response;
+		
+		public HttpContextRoutedEventImpl(ProteusServer server, Socket client, ProteusHttpRequestImpl request, ClientKeepAliveEvent keepAlive, CompressionEncoding compression, String method) throws IOException {
 			this.client = client;
 			this.request = request;
 			this.compression = compression;
 			this.method = method;
 			this.keepAlive = keepAlive;
+			this.response = new ProteusHttpResponseImpl(server, keepAlive, client.getOutputStream(), compression);
 		}
 
 		@Override
@@ -416,7 +405,7 @@ public class ProteusServer {
 				switch(method) {
 	        	case "GET":
 	        	case "POST":
-	        		respondWithContext(request, keepAlive, client.getOutputStream(), compression);
+	        		request.getContext().handle(request, response);
 	        		break;
 	        	default:
 	        		ErrorResponse.sendUnmodifiableErrorResponse(dispatcher, ResponseCode.METHOD_NOT_ALLOWED, client.getOutputStream());
@@ -437,6 +426,16 @@ public class ProteusServer {
 		@Override
 		public HttpRoute getRoute() {
 			return request.getRoute();
+		}
+
+		@Override
+		public ProteusHttpRequest getRequest() {
+			return request;
+		}
+
+		@Override
+		public ProteusHttpResponse getResponse() {
+			return response;
 		}
 		
 	}
