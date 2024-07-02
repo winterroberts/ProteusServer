@@ -93,7 +93,7 @@ public class Proteus {
 		@Override
 		public Set<CompositeRouter> build() {
 			Hostname host = new Hostname("localhost");
-			EndpointConfiguration ec = new EndpointConfiguration(EndpointType.HTTP, 80);
+			EndpointConfiguration ec = new EndpointConfiguration(443, Set.of(EndpointType.HTTP1_1, EndpointType.HTTP2));
 			ec.getContextController().addHttpContext(new ProteusHttpContext() {
 				
 				@Override
@@ -113,21 +113,22 @@ public class Proteus {
 				
 			}, new PathInterpreter("/a/:name"), new PathInterpreter("/a"));
 			
-			ec.getContextController().addHttpContext(new PublishContext("C:/Users/wrpar/Desktop/sandbox/didmattshave"),
-					new PathInterpreter("/b", true));
 			RouterBuilder rb = new RouterBuilder();
 			rb.addHostname(host);
 			
-			File keystore = new File("./ssl/localhost.jks");
+			File keystore = new File("C:/Users/wrpar/dev/git/proteus/ssl/localhost.jks");
+			if (!keystore.exists()) {
+				System.out.println("localhost.jks not loaded!");
+			}
 			SSLServerSocketFactory sslFactory = null;
 			try {
-				sslFactory = KeyStoreLoader.loadKeyStoreToSocketFactory(keystore, "123456", "123456", "localhost");
+				sslFactory = KeyStoreLoader.loadKeyStoreToSSLSocketFactory(keystore, "123456", "123456", "localhost");
 			} catch (UnrecoverableKeyException | KeyManagementException | NoSuchAlgorithmException
 					| CertificateException | KeyStoreException | IOException | InvalidAlgorithmParameterException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			return Set.of(rb.build(ec).toComposite());
+			return Set.of(rb.build(ec).toComposite(sslFactory));
 		}
 		
 	}

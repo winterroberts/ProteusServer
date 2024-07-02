@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONException;
 
 import net.winrob.proteus.ProteusServer;
 import net.winrob.proteus.api.ProteusPlugin;

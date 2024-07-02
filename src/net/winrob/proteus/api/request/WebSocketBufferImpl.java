@@ -35,9 +35,8 @@ public class WebSocketBufferImpl implements WebSocketBuffer {
 			buffer = StreamUtils.joinByteArrayToBuffer(buffer.array(), data);
 			bufferSize += data.length;
 			return true;
-		} else {
-			return false;
 		}
+		return false;
 	}
 	
 	@Override

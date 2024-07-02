@@ -2,14 +2,19 @@ package net.winrob.proteus;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.util.Set;
+import java.util.stream.Collectors;
 
+import javax.net.ssl.HandshakeCompletedEvent;
+import javax.net.ssl.HandshakeCompletedListener;
 import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLProtocolException;
+import javax.net.ssl.SSLSocket;
 
 import net.winrob.commons.saon.EventDispatcher;
 import net.winrob.proteus.api.ProteusApp;
@@ -20,18 +25,20 @@ import net.winrob.proteus.api.event.http.HttpContextRoutedEvent;
 import net.winrob.proteus.api.event.server.ClientAcceptEvent;
 import net.winrob.proteus.api.event.server.ListenerThreadSpawnedEvent;
 import net.winrob.proteus.api.event.server.RequestReceivedEvent;
+import net.winrob.proteus.api.event.server.SSLHandshakeCompletedEvent;
 import net.winrob.proteus.api.event.websocket.WebSocketContextRoutedEvent;
+import net.winrob.proteus.api.request.ProteusH2ConnectionImpl;
 import net.winrob.proteus.api.request.ProteusHttpRequest;
 import net.winrob.proteus.api.request.ProteusHttpRequestImpl;
 import net.winrob.proteus.api.request.ProteusWebSocketConnection;
 import net.winrob.proteus.api.request.ProteusWebSocketConnectionImpl;
 import net.winrob.proteus.api.request.ProteusWebSocketConnectionManager;
-import net.winrob.proteus.api.request.ProteusWebSocketRequest;
 import net.winrob.proteus.api.request.ProteusWebSocketRequestImpl;
 import net.winrob.proteus.api.response.ProteusHttpResponse;
 import net.winrob.proteus.api.response.ProteusHttpResponseImpl;
 import net.winrob.proteus.api.response.ResponseCode;
 import net.winrob.proteus.compression.CompressionEncoding;
+import net.winrob.proteus.configuration.EndpointType;
 import net.winrob.proteus.error.ErrorResponse;
 import net.winrob.proteus.header.ProteusHeaderBuilder;
 import net.winrob.proteus.header.ProteusHttpHeaders;
@@ -94,7 +101,49 @@ public class ProteusServer {
 						new ListenerThreadSpawnedEvent(server, router).dispatchImmediately(dispatcher);
 						while (running) {
 							Socket client = server.accept();
-							new ClientAcceptEventImpl(client, router).dispatch(dispatcher);
+							try {
+								if (router.isSecure() && router.getTypes().contains(EndpointType.HTTP2)) {
+									SSLSocket sslClient = (SSLSocket) client;
+									sslClient.setHandshakeApplicationProtocolSelector((sock, list) -> {
+										boolean hasH11 = false;
+										boolean hasH2 = false;
+										for (String ap : list) {
+											switch(ap) {
+											case "h2":
+												hasH2 = true;
+												break;
+											case "http/1.1":
+												hasH11 = true;
+												break;
+											default:
+												break;
+											}
+										}
+										if (hasH2) return "h2";
+										if (hasH11 && router.getTypes().contains(EndpointType.HTTP1_1)) return "http/1.1";
+										return null;
+									});
+									sslClient.addHandshakeCompletedListener(new HandshakeCompletedListener() {
+
+										@Override
+										public void handshakeCompleted(HandshakeCompletedEvent event) {
+											new SSLHandshakeCompletedEventImpl(sslClient, router).dispatch(dispatcher);;
+										}
+										
+									});
+									sslClient.startHandshake();
+								} else {
+									new ClientAcceptEventImpl(client, router).dispatch(dispatcher);
+								}
+							} catch (SocketException e) {
+								client.close();
+							} catch (SSLHandshakeException e) {
+								System.err.println("SSL failed: " + e.getMessage());
+								client.close();
+							} catch (Exception e) {
+								e.printStackTrace();
+								client.close();
+							}
 						}
 					} catch (IOException e) {
 						e.printStackTrace();
@@ -103,7 +152,7 @@ public class ProteusServer {
 				});
 				listenThread.setName(appName + "-Listener");
 				listenThread.start();
-				System.out.println("Port " + router.getPort() + " opened in " + router.getType().toString() + " mode" + (router.isSecure() ? " (secure)" : "") + ".");
+				System.out.println("Port " + router.getPort() + " opened in " + String.join(", ", router.getTypes().stream().map(e -> e.getProtocolName()).collect(Collectors.toList())) + " mode(s)" + (router.isSecure() ? " (secure)" : "") + ".");
 			}
 			Proteus.addServer(this);
 		}
@@ -119,13 +168,17 @@ public class ProteusServer {
 	 * @param client The new client connection to be handled.
 	 * @throws IOException If there is an error reading from the socket.
 	 */
-	private void clientHandler(Socket client, CompositeRouter router) throws IOException {
+	private boolean clientHandlerH11(Socket client, CompositeRouter router) throws IOException {
 		InputStream inputStream = client.getInputStream();
 		
 		StringBuilder requestBuilder = new StringBuilder();
         String line;
 	    while ((line = StreamUtils.readLine(inputStream, true)).length() < 4) {
-	    	if (client.isInputShutdown()) return;
+	    	if (client.isInputShutdown()) return false;
+	    }
+	    if (line.equals("PRI * HTTP/2.0") && !router.isSecure()) {
+	    	// upgrade insecure connection to h2 (prior knowledge)
+	    	return true;
 	    }
         do {
         	requestBuilder.append(line + "\r\n");
@@ -153,6 +206,31 @@ public class ProteusServer {
         }
         ProteusHttpHeaders headers = headerBuilder.toHeaders();
         new RequestReceivedEventImpl(client, router, headers, method, path, version).dispatch(dispatcher);
+        return false;
+	}
+	
+	private final String[] connectionPrefaceLines = new String[] {"PRI * HTTP/2.0", "", "SM", ""};
+	
+	private void clientHandlerH2(Socket client, CompositeRouter router, boolean skipFirstPrefaceLine) throws IOException {
+		InputStream inputStream = client.getInputStream();
+		
+		// read connection preface
+		if (!skipFirstPrefaceLine) {
+			String preface0 = StreamUtils.readLine(inputStream, true);
+			if (!preface0.equals(connectionPrefaceLines[0])) {
+				client.close();
+				return;
+			}
+		}
+		for (int i = 1; i <= 3; i++) {
+			String pline = StreamUtils.readLine(inputStream, true);
+			if (!pline.equals(connectionPrefaceLines[i])) {
+				client.close();
+				return;
+			}
+		}
+		
+		new ProteusH2ConnectionImpl(client, router).start();
 	}
 	
 	private void routeRequest(RequestReceivedEvent event, Socket client, CompositeRouter router) throws IOException {
@@ -229,12 +307,19 @@ public class ProteusServer {
 	 * Events
 	 */
 	
-	private void startHandlerThread(Socket client, CompositeRouter router) {
+	private void startHandlerThread(Socket client, CompositeRouter router, String ap) {
 		Thread handler = new Thread(() -> {
 			try {
 				if (!client.isClosed()) {
 					client.setSoTimeout(30000);
-					clientHandler(client, router);
+					boolean shouldH2 = ap.equals("h2");
+					if (!shouldH2) {
+						if (clientHandlerH11(client, router)) {
+							clientHandlerH2(client, router, true);
+						}
+					} else {
+						clientHandlerH2(client, router, false);
+					}
 				}
 			} catch(SSLProtocolException e) {
 				
@@ -255,9 +340,18 @@ public class ProteusServer {
 		private final Socket client;
 		private final CompositeRouter router;
 		
+		private final String ap;
+		
 		public ClientAcceptEventImpl(Socket client, CompositeRouter router) {
 			this.client = client;
 			this.router = router;
+			this.ap = "http/1.1";
+		}
+		
+		public ClientAcceptEventImpl(Socket client, CompositeRouter router, String ap) {
+			this.client = client;
+			this.router = router;
+			this.ap = ap;
 		}
 
 		@Override
@@ -272,7 +366,7 @@ public class ProteusServer {
 
 		@Override
 		protected boolean run() {
-			startHandlerThread(client, router);
+			startHandlerThread(client, router, ap);
 			return true;
 		}
 		
@@ -462,7 +556,35 @@ public class ProteusServer {
 
 		@Override
 		protected boolean run() {
-			startHandlerThread(client, router);
+			startHandlerThread(client, router, "http/1.1");
+			return true;
+		}
+		
+	}
+	
+	private class SSLHandshakeCompletedEventImpl extends SSLHandshakeCompletedEvent {
+		
+		private final SSLSocket client;
+		private final CompositeRouter router;
+		
+		public SSLHandshakeCompletedEventImpl(SSLSocket client, CompositeRouter router) {
+			this.client = client;
+			this.router = router;
+		}
+
+		@Override
+		public SSLSocket getClientSocket() {
+			return client;
+		}
+
+		@Override
+		public CompositeRouter getRouter() {
+			return router;
+		}
+
+		@Override
+		protected boolean run() {
+			new ClientAcceptEventImpl(client, router, client.getApplicationProtocol()).dispatchImmediately(dispatcher);
 			return true;
 		}
 		
